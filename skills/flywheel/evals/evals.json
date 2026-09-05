@@ -1,0 +1,50 @@
+{
+  "skill_name": "flywheel",
+  "evals": [
+    {
+      "id": 1,
+      "name": "bounded-bug-fix-loop",
+      "prompt": "You are the flywheel orchestrator. The user reports: login returns 500 when the email field is empty instead of a 400 validation error. Walk through dispatching this as a bounded bug fix to the OpenCode worker (model opencode-go/deepseek-v4-pro), including the brief contents, the exact dispatch command, and how you review and correct the result.",
+      "expected_output": "A complete bounded-bug-fix loop: a precise single-task brief (goal, current state, exact change, don't-touch list, real gate commands, report contract), a safe quoted file-brief dispatch via the opencode CLI with the approved model plus --title and --format json, exit-status capture, git-diff review plus independent gate re-run, and a correction path that resumes the emitted session id with a delta brief rather than implementing the fix.",
+      "files": [],
+      "expectations": [
+        "Writes a bounded single-task brief stating goal, current state, exact change, don't-touch list, the repo's actual gate commands, and a report contract.",
+        "Dispatches with `opencode run -m opencode-go/deepseek-v4-pro --title flywheel-task --format json` using a safe quoted file brief (cat into a single quoted argument) and captures the exit status.",
+        "Records the session id emitted in the JSON output and uses only that emitted id for a later --session resume, never an invented flywheel-id string.",
+        "Reviews the actual exit status and the git diff against the brief rather than trusting the worker's self-report.",
+        "Runs validation commands independently when needed, but sends any implementation change to the worker.",
+        "Sends corrections to the worker by resuming the emitted session id with a delta brief, and does not write the implementation itself.",
+        "Does not commit or push, and does not include secrets in the brief."
+      ]
+    },
+    {
+      "id": 2,
+      "name": "overlapping-parallel-edits",
+      "prompt": "You are the flywheel orchestrator with two tasks that both touch src/api/client.ts and src/store/state.ts. The user asks you to run them as two parallel workers. What do you do, and how does your plan preserve disjoint file ownership and dirty edits?",
+      "expected_output": "A concurrency plan that detects the overlapping files, refuses to dispatch them in parallel as-is, partitions or serializes the work into disjoint file ownership, names owned files per worker in each brief, and adds every in-flight/dirty file to each brief's don't-touch list, with each fresh run labelled by --title/--format json and its emitted session id kept for any resume.",
+      "files": [],
+      "expectations": [
+        "Detects that both tasks touch src/api/client.ts and src/store/state.ts and treats that as a conflict.",
+        "Refuses to run the two workers in parallel while they share files; serializes or re-partitions to disjoint file ownership.",
+        "States each worker's owned files explicitly in its brief.",
+        "Adds the orchestrator's and any other worker's dirty/in-flight files to each brief's don't-touch list.",
+        "Preserves dirty edits instead of letting a worker clobber uncommitted work.",
+        "Labels each fresh run with --title and --format json and keeps the emitted session id for each worker so corrections resume the right emitted context rather than an invented id."
+      ]
+    },
+    {
+      "id": 3,
+      "name": "unavailable-deepseek-worker",
+      "prompt": "You are the flywheel orchestrator. Mid-task, the `opencode run` dispatch fails because the DeepSeek worker is unavailable (the model is unauthenticated). The user is waiting on a bug fix. What do you do?",
+      "expected_output": "A blocker report: the orchestrator detects the nonzero exit status, reports that the worker is unavailable with the specific reason, halts rather than taking over, and does not implement the fix itself or silently switch to another model/provider.",
+      "files": [],
+      "expectations": [
+        "Checks and reports the actual exit status of the failed opencode run.",
+        "Reports the blocker (worker unavailable / unauthenticated model) with the specific reason instead of proceeding.",
+        "Does not implement the bug fix itself to keep moving.",
+        "Does not silently switch to another model or provider without approval.",
+        "Halts and asks rather than guessing at an alternative metered model."
+      ]
+    }
+  ]
+}
