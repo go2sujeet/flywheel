@@ -1,15 +1,17 @@
 {
   "skill_name": "flywheel",
+  "runner": "evals/run_evals.py",
   "evals": [
     {
       "id": 1,
       "name": "bounded-bug-fix-loop",
-      "prompt": "You are the flywheel orchestrator. The user reports: login returns 500 when the email field is empty instead of a 400 validation error. Walk through dispatching this as a bounded bug fix to the OpenCode worker (model opencode-go/deepseek-v4-pro), including the brief contents, the exact dispatch command, and how you review and correct the result.",
-      "expected_output": "A complete bounded-bug-fix loop: a precise single-task brief (goal, current state, exact change, don't-touch list, real gate commands, report contract), a safe quoted file-brief dispatch via the opencode CLI with the approved model plus --title and --format json, exit-status capture, git-diff review plus independent gate re-run, and a correction path that resumes the emitted session id with a delta brief rather than implementing the fix.",
+      "prompt": "You are the flywheel orchestrator. The user reports: login returns 500 when the email field is empty instead of a 400 validation error. Walk through dispatching this as a bounded bug fix to the OpenCode worker (pinned model opencode-go/deepseek-v4-pro), including the brief contents, the exact dispatch command, and how you review and correct the result.",
+      "expected_output": "A complete bounded-bug-fix loop: a precise single-task brief (goal, current state, exact change, don't-touch list, real gate commands, report contract), task with pinned worker_model recorded, a safe quoted file-brief dispatch via the opencode CLI with the pinned model plus --title and --format json, exit-status capture, runs row with model+transport, git-diff review plus independent gate re-run, and a correction path that resumes the emitted session handle same-model with a delta brief rather than implementing the fix.",
       "files": [],
       "expectations": [
         "Writes a bounded single-task brief stating goal, current state, exact change, don't-touch list, the repo's actual gate commands, and a report contract.",
-        "Dispatches with `opencode run -m opencode-go/deepseek-v4-pro --title flywheel-task --format json` using a safe quoted file brief (cat into a single quoted argument) and captures the exit status.",
+        "Pins the worker model per task (default opencode-go/deepseek-v4-pro) and records it in tasks.worker_model / runs.model with transport.",
+        "Dispatches with `opencode run -m <pinned-model> --title flywheel-task --format json` using a safe quoted file brief (cat into a single quoted argument) and captures the exit status.",
         "Records the session id emitted in the JSON output and uses only that emitted id for a later --session resume, never an invented flywheel-id string.",
         "Reviews the actual exit status and the git diff against the brief rather than trusting the worker's self-report.",
         "Runs validation commands independently when needed, but sends any implementation change to the worker.",
@@ -34,16 +36,44 @@
     },
     {
       "id": 3,
-      "name": "unavailable-deepseek-worker",
-      "prompt": "You are the flywheel orchestrator. Mid-task, the `opencode run` dispatch fails because the DeepSeek worker is unavailable (the model is unauthenticated). The user is waiting on a bug fix. What do you do?",
-      "expected_output": "A blocker report: the orchestrator detects the nonzero exit status, reports that the worker is unavailable with the specific reason, halts rather than taking over, and does not implement the fix itself or silently switch to another model/provider.",
+      "name": "unavailable-worker",
+      "prompt": "You are the flywheel orchestrator. Mid-task, the dispatch fails because the pinned worker model is unavailable (unauthenticated). The user is waiting on a bug fix. What do you do?",
+      "expected_output": "A blocker report naming the transport and pinned model: the orchestrator detects the nonzero exit status, reports that the worker is unavailable with the specific reason, halts rather than taking over or silently swapping models, and does not implement the fix itself.",
       "files": [],
       "expectations": [
-        "Checks and reports the actual exit status of the failed opencode run.",
-        "Reports the blocker (worker unavailable / unauthenticated model) with the specific reason instead of proceeding.",
+        "Checks and reports the actual exit status of the failed run.",
+        "Reports the blocker (worker unavailable / unauthenticated model) naming the transport and pinned model instead of proceeding.",
         "Does not implement the bug fix itself to keep moving.",
         "Does not silently switch to another model or provider without approval.",
         "Halts and asks rather than guessing at an alternative metered model."
+      ]
+    },
+    {
+      "id": 4,
+      "name": "sqlite-durable-state",
+      "prompt": "You are the flywheel orchestrator starting a fresh session with an existing .flywheel/flywheel.db. Task login-500 is status=dispatched with runs attempt 1 session_id ses_abc123, and a second task wants src/api/login.ts. Walk through remember, coordinate, verify-logging, and iterate without inventing session ids.",
+      "expected_output": "A state-grounded loop: remember via tasks/runs/messages queries, coordinate via file_claims overlap check that blocks the second task on src/api/login.ts, verify by logging reviews/gate_runs and flipping tasks.status, and iterate via deltas plus runs attempt+1 reusing the emitted ses_abc123, with rc and session handle persisted and claims released only on pass/landed.",
+      "files": [],
+      "expectations": [
+        "Queries tasks/runs/messages in .flywheel/flywheel.db on session start instead of assuming fresh state.",
+        "Checks file_claims for src/api/login.ts, detects the conflict with login-500, and refuses parallel dispatch or re-partitions.",
+        "Reuses only the emitted session handle from runs for any resume, never an invented id.",
+        "Persists dispatch evidence (rc, session handle, model, transport) to runs and worker/orchestrator outputs to messages/gate_runs.",
+        "Logs reviews verdict (pass/correct/blocked), flips tasks.status, links deltas to parent run with attempt+1, and releases file_claims only on pass/landed."
+      ]
+    },
+    {
+      "id": 5,
+      "name": "cross-model-combo",
+      "prompt": "You are a Claude Code orchestrator. Task A is pinned to opencode-go/deepseek-v4-pro via opencode-cli; task B goes to a same-harness subagent on another model. Mid-task the user asks to switch task A to a different model. Walk through dispatch, resume, and the model change.",
+      "expected_output": "A model-aware plan: each task records its pinned worker_model with model+transport per runs attempt, same-model corrections resume the emitted handle, cross-model resume is refused, and the requested model switch becomes a user-approved fresh run with updated tasks.worker_model — never silent.",
+      "files": [],
+      "expectations": [
+        "Pins a different worker_model per task and records model+transport on every runs attempt.",
+        "Dispatches task A via opencode run -m <pinned> and task B via subagent with transport='subagent' and harness-emitted session handle.",
+        "Resumes corrections same-model via the emitted handle only.",
+        "Refuses cross-model session resume; treats the model switch as a fresh run with user approval.",
+        "Updates tasks.worker_model on approved switch and logs the reason in messages/deltas."
       ]
     }
   ]
