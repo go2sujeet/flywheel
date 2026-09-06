@@ -64,35 +64,36 @@ opencode run -m opencode-go/deepseek-v4-pro --auto --title "flywheel-task" --for
 **Detecting a stalled run.** A healthy run writes JSONL within roughly 30 seconds; zero bytes after
 that is a stall, not slowness — check with `wc -c` on the output file, not by waiting. Distinguish
 the two hangs: zero bytes means a stall; events present but stopping after tool calls means a
-permission block (see the `--auto` note above). Recovery must reap the run **and its orphans**, then
-verify before re-dispatching:
+permission block (see the `--auto` note above). Recovery is a **precondition, not a remedy** — the
+environment must be verified clean before every dispatch that follows another one. The precondition
+is the whole thing:
 
 ```bash
-pkill -f "<the --title value>"
-pkill -f "opencode --session"
+pgrep -f "opencode run" | wc -l    # MUST be 0 — never clean up mid-flight
 pkill -f "opencode serve"
-pgrep -f "opencode serve" | wc -l      # expect 0
-pgrep -f "opencode --session" | wc -l   # expect 0
+pgrep -x opencode | wc -l          # MUST be 0 before dispatching
 ```
 
-1. Killing the wrapper alone is not enough. `pkill -f "<--title>"` matches only the `opencode run`
-   wrapper; the `--session` and `serve` processes it spawned survive, and those orphans cause the
-   NEXT stall — the documented recovery was a feedback loop: stall, pkill, orphan, stall.
-2. The verification step is the point. Assuming the kill worked is exactly the mistake that cost
-   seven stalls in a single session; after killing three orphaned `--session` processes and one
-   orphaned `serve`, the very next dispatch produced output immediately instead of sitting at zero
-   bytes for 90 seconds.
-3. Do not verify with a bare `pgrep -fl opencode`. It prints full command lines, and a dispatch
-   passes the brief as an argument, so any brief mentioning opencode inflates the output into dozens
-   of apparent matches (observed: 67 apparent processes when the real state was one legitimate
-   server and zero orphans). Count the two specific patterns and pipe through `wc -l` instead.
-4. Normal completion also leaks a `serve` process, so if dispatches start stalling after a long
-   session, check for orphans before blaming the model or the network.
+1. **Never kill `opencode serve` while any dispatch is running.** It is shared, and killing it takes
+   down healthy work. This mistake looks exactly like a mysterious race condition — it was
+   self-inflicted, not a simultaneous-dispatch bug. The `pgrep -f "opencode run"` count MUST be 0
+   before any cleanup: only reap when no dispatch is in flight.
+2. **Verify with `pgrep -x opencode`, never a `-f` pattern match.** A bare `pgrep -f opencode` (or
+   `-fl`) matches full command lines, and a dispatch passes its brief as an argument, so any brief
+   mentioning opencode inflates the count — observed: 67 apparent processes when the true state was
+   one server and zero orphans. `pgrep -x opencode` matches the process *name* exactly and is immune
+   to this.
+3. **A verified-clean environment strongly improves the odds, but it is not a cure.** Treat it as a
+   precondition for a dispatch rather than a remedy applied
+   only after a stall.** Dispatching from a state verified as zero opencode processes produced
+   output within a second, three times in a row; dispatching without verifying stalled, repeatedly,
+   with the same brief. Honest caveat: this is not a complete explanation. A dispatch has also stalled AFTER a verified-clean check, and has succeeded with a stray process present. Long, multi-step briefs stall far more than short ones. Cleaning up first clearly helps and costs nothing; it is not a guarantee, and the underlying cause is not fully understood. Check both counts before every dispatch that follows another one.
 
-This is routine, not an edge case: seven silent stalls occurred across roughly twenty dispatches in
-a single session — most of them self-inflicted by the incomplete recovery above — and clearing the
-orphans made the next dispatch produce output immediately. None recovered by waiting, so do not wait
-it out. A killed background dispatch exits 144, which is expected and not a worker failure.
+Run the cleanup-and-verify as its **own step** and read the numbers before dispatching. An
+orchestrator that runs the cleanup and the dispatch in a single shell command cannot see the
+verification output once the dispatch is backgrounded, so it cannot confirm the precondition held —
+this alone caused two stalls that looked inexplicable. A killed background dispatch exits 144, which
+is expected and not a worker failure.
 
 ## 3. Concurrency: disjoint file ownership, preserve dirty edits
 
@@ -120,8 +121,8 @@ in-flight changes the worker could otherwise clobber. If you can't guarantee dis
 change, don't dispatch it in parallel.
 
 **Check for orphans between batches.** Orphan accumulation is silent and only shows up as unexplained
-stalls later, so a long orchestration session should check `pgrep -f "opencode serve" | wc -l`
-between batches and reap any leaked `serve` / `--session` processes (the recovery block in §2) before
+stalls later, so a long orchestration session should run the cleanup-and-verify step from §2 between
+batches — verify zero opencode processes, and never clean up while a dispatch is in flight — before
 the next dispatch.
 
 ## 4. Process and session handles

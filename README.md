@@ -111,8 +111,9 @@ flowchart TD
 ```
 
 Registration files like `lib.rs` are choke points almost every task wants to touch: serialize on
-them or give one task sole ownership. Between batches, check `pgrep -f "opencode serve" | wc -l` for
-leaked orphans — they accumulate silently and only show up later as unexplained stalls.
+them or give one task sole ownership. Between batches, run the cleanup-and-verify step from
+Troubleshooting — verify zero opencode processes, never mid-flight — they accumulate silently and
+only show up later as unexplained stalls.
 
 ## Troubleshooting
 
@@ -123,7 +124,7 @@ flowchart TD
     A["Dispatch is not finishing"] --> B{"rc nonzero?"}
     B -- yes --> C["Run failed to execute: check args, binary, auth"]
     B -- no --> D{"wc -c output shows zero bytes?"}
-    D -- yes --> E["Silent stall: pkill -f <the --title value>, re-dispatch"]
+    D -- yes --> E["Silent stall: verify no dispatch running, pkill serve, verify clean, re-dispatch"]
     D -- no --> F{"Events stop after tool calls?"}
     F -- yes --> G["Permission block: add --auto"]
     F -- no --> H["Still writing: healthy, wait"]
@@ -132,27 +133,37 @@ flowchart TD
 | Symptom | Fix |
 | --- | --- |
 | Worker hangs on the first file write | Re-dispatch with `--auto` (permission block; `opencode.jsonc` is the narrower alternative). |
-| Output file has zero bytes after ~30s | Silent stall — confirm with `wc -c`, then reap the wrapper **and its orphans** (recovery block below) and re-dispatch. |
+| Output file has zero bytes after ~30s | Silent stall — confirm with `wc -c`, then run the recovery protocol below (precondition first) and re-dispatch. |
 | Exit status `144` | Your own `pkill` — expected, not a worker failure. |
 | Resume output is not JSONL | Re-dispatch the resume with `--format json`. |
 
-**Recovery from a stall.** `pkill -f "<the --title value>"` kills only the `opencode run` wrapper —
-the orphaned `opencode --session` and `opencode serve` processes survive and cause the NEXT stall.
-Reap them and verify before re-dispatching:
+**Recovery from a stall — precondition first.** Cleanup is a precondition, not a remedy: verify the
+environment is clean before every dispatch that follows another one, and never clean up while a
+dispatch is running.
 
 ```bash
-pkill -f "<the --title value>"
-pkill -f "opencode --session"
+pgrep -f "opencode run" | wc -l    # MUST be 0 — never clean up mid-flight
 pkill -f "opencode serve"
-pgrep -f "opencode serve" | wc -l      # expect 0
-pgrep -f "opencode --session" | wc -l   # expect 0
+pgrep -x opencode | wc -l          # MUST be 0 before dispatching
 ```
 
-The verification is the point — assuming the kill worked cost seven stalls in one session. Do not
-verify with a bare `pgrep -fl opencode`: a dispatch passes the brief as an argument, so a brief
-mentioning opencode inflates the output into dozens of apparent matches (observed 67 when the real
-state was one server and zero orphans). Normal completion also leaks a `serve` process, so if
-dispatches stall after a long session, check for orphans before blaming the model or the network.
+1. **Never kill `opencode serve` while any dispatch is running** — it is shared, and killing it
+   takes down healthy work. This looks exactly like a mysterious race condition, but it is
+   self-inflicted: the `pgrep -f "opencode run"` count MUST be 0 before any cleanup.
+2. **Verify with `pgrep -x opencode`, never a `-f` pattern match** — `-f`/`-fl` reads full command
+   lines, and a dispatch passes its brief as an argument, so a brief mentioning opencode inflates
+   the count (observed 67 when the true state was one server and zero orphans). `pgrep -x` matches
+   the process name exactly.
+3. **A verified-clean environment strongly improves the odds, but it is not a cure.** Treat it as a
+   precondition for a dispatch rather than a post-stall
+   remedy.** Dispatching from a state verified as zero opencode processes produced output within a
+   second, three times in a row; without verifying, the same brief stalled repeatedly. Honest caveat: this is not a complete explanation. A dispatch has also stalled AFTER a verified-clean check, and has succeeded with a stray process present. Long, multi-step briefs stall far more than short ones. Cleaning up first clearly helps and costs nothing; it is not a guarantee, and the underlying cause is not fully understood.
+
+Run the cleanup-and-verify as its **own step** and read the numbers before dispatching — an
+orchestrator that runs cleanup and dispatch in one shell command cannot see the verification output
+once the dispatch is backgrounded, so it cannot confirm the precondition held (this alone caused two
+inexplicable stalls). Normal completion leaks a `serve` process, so if dispatches stall after a long
+session, check for orphans before blaming the model or the network.
 
 Full detail lives in `skills/flywheel/references/worker-brief.md` — this table is a scannable
 index, not a replacement.
