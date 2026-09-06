@@ -27,8 +27,10 @@ your judgment; 2 and 3 are mechanical. Full detail on every step is in
 ## Invariants (hold these or don't run)
 
 - **Approved worker only.** Default `--model opencode-go/deepseek-v4-pro`. Never silently switch
-  providers or models, and never assert a metered model is free. If no approved worker is
-  available, stop and ask — don't guess.
+  providers or models, and never assert a metered model is free — measured at ~60k input tokens
+  (~$0.04) of harness overhead per dispatch, regardless of task size, with no prompt caching
+  observed. Prefer fewer, larger briefs. If no approved worker is available, stop and ask — don't
+  guess.
 - **Orchestrator never implements.** You send corrections to the worker; you do not write the fix.
 - **Worker unavailable → report blocker, do not take over.** If the `opencode` CLI is missing, the
   model is unauthenticated, or the session cannot be resumed, report the blocker and halt.
@@ -41,22 +43,28 @@ your judgment; 2 and 3 are mechanical. Full detail on every step is in
 
 ### 1. Plan & brief
 Decompose the request into bounded, single-purpose tasks. Write each brief to a file (safe quoting,
-no secrets): goal, current state, exact change, explicit don't-touch list, the repo's **real** gate
-commands (discover from AGENTS.md/CLAUDE.md/Makefile — never assume), and a report contract. For
-concurrency, assign **disjoint file ownership** — no two workers may touch the same file. Template
-and rules: [references/worker-brief.md](references/worker-brief.md).
+no secrets): goal, exact change, don't-touch list of uncommitted in-flight files, task-specific
+tests, and a report contract. The worker auto-loads AGENTS.md/CLAUDE.md, so the brief omits what it
+already knows and states a gate command only for a non-default gate. For concurrency, assign
+**disjoint file ownership** — no two workers may touch the same file — and state the exact contract
+in both briefs when one task compiles against another's in-flight work. Template and rules:
+[references/worker-brief.md](references/worker-brief.md).
 
 ### 2. Dispatch (safe quoted file brief)
 Verify the CLI first (`opencode run --help` — confirm flags before relying on them), then a
-**fresh run** labelled with `--title` and emitted as JSON so you can capture the session id:
+**fresh run** labelled with `--title`, auto-approving permissions with `--auto`, and emitted as JSON
+so you can capture the session id:
 
 ```bash
-opencode run -m opencode-go/deepseek-v4-pro --title "flywheel-task" --format json \
+opencode run -m opencode-go/deepseek-v4-pro --auto --title "flywheel-task" --format json \
   "$(cat .flywheel/briefs/<id>.txt)"; rc=$?
 ```
 
-Capture the exit status (`rc` above) **and the session id emitted in the JSON output** — both are
-evidence. `--session` accepts only that emitted id; it never takes an invented string.
+`--auto` is required for non-interactive dispatch: without it the worker hangs on a permission prompt
+nobody can answer the first time it writes a file. (`opencode.jsonc` permission config is the
+narrower alternative if you prefer not to auto-approve.) Capture the exit status (`rc` above) **and
+the session id emitted in the JSON output** — both are evidence. `--session` accepts only that
+emitted id; it never takes an invented string.
 
 ### 3. Execute
 The worker runs tests itself. You do not run the tests for it; you judge its results afterward.
@@ -74,9 +82,12 @@ The worker runs tests itself. You do not run the tests for it; you judge its res
   delta brief (never implement it yourself, never invent the session id):
 
 ```bash
-opencode run -m opencode-go/deepseek-v4-pro --session "<emitted-sessionID>" \
+opencode run -m opencode-go/deepseek-v4-pro --auto --session "<emitted-sessionID>" \
   "$(cat .flywheel/briefs/<id>.delta.txt)"
 ```
+
+Without `--format json`, a resume emits human-formatted output, not JSONL — pass `--format json` on
+the resume to parse it, or read the output as text.
 
 - Correct and gate-passing → surface the result; commit **only** if the user asked you to.
 
