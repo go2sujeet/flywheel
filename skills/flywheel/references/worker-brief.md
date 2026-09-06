@@ -64,11 +64,35 @@ opencode run -m opencode-go/deepseek-v4-pro --auto --title "flywheel-task" --for
 **Detecting a stalled run.** A healthy run writes JSONL within roughly 30 seconds; zero bytes after
 that is a stall, not slowness — check with `wc -c` on the output file, not by waiting. Distinguish
 the two hangs: zero bytes means a stall; events present but stopping after tool calls means a
-permission block (see the `--auto` note above). Recovery is `pkill -f "<the --title value>"` then
-re-dispatch. This is routine, not an edge case: four silent stalls occurred across roughly
-twenty dispatches in a single session — about one in five — and every stall that was retried
-recovered on the FIRST retry. None recovered by waiting, so do not wait it out. A killed background
-dispatch exits 144, which is expected and not a worker failure.
+permission block (see the `--auto` note above). Recovery must reap the run **and its orphans**, then
+verify before re-dispatching:
+
+```bash
+pkill -f "<the --title value>"
+pkill -f "opencode --session"
+pkill -f "opencode serve"
+pgrep -f "opencode serve" | wc -l      # expect 0
+pgrep -f "opencode --session" | wc -l   # expect 0
+```
+
+1. Killing the wrapper alone is not enough. `pkill -f "<--title>"` matches only the `opencode run`
+   wrapper; the `--session` and `serve` processes it spawned survive, and those orphans cause the
+   NEXT stall — the documented recovery was a feedback loop: stall, pkill, orphan, stall.
+2. The verification step is the point. Assuming the kill worked is exactly the mistake that cost
+   seven stalls in a single session; after killing three orphaned `--session` processes and one
+   orphaned `serve`, the very next dispatch produced output immediately instead of sitting at zero
+   bytes for 90 seconds.
+3. Do not verify with a bare `pgrep -fl opencode`. It prints full command lines, and a dispatch
+   passes the brief as an argument, so any brief mentioning opencode inflates the output into dozens
+   of apparent matches (observed: 67 apparent processes when the real state was one legitimate
+   server and zero orphans). Count the two specific patterns and pipe through `wc -l` instead.
+4. Normal completion also leaks a `serve` process, so if dispatches start stalling after a long
+   session, check for orphans before blaming the model or the network.
+
+This is routine, not an edge case: seven silent stalls occurred across roughly twenty dispatches in
+a single session — most of them self-inflicted by the incomplete recovery above — and clearing the
+orphans made the next dispatch produce output immediately. None recovered by waiting, so do not wait
+it out. A killed background dispatch exits 144, which is expected and not a worker failure.
 
 ## 3. Concurrency: disjoint file ownership, preserve dirty edits
 
@@ -94,6 +118,11 @@ DRY rule, and coordination was not the observed bottleneck; reliability was.
 uncommitted work — is not free real estate. A brief's don't-touch list must name every file with
 in-flight changes the worker could otherwise clobber. If you can't guarantee disjoint ownership for a
 change, don't dispatch it in parallel.
+
+**Check for orphans between batches.** Orphan accumulation is silent and only shows up as unexplained
+stalls later, so a long orchestration session should check `pgrep -f "opencode serve" | wc -l`
+between batches and reap any leaked `serve` / `--session` processes (the recovery block in §2) before
+the next dispatch.
 
 ## 4. Process and session handles
 
