@@ -24,6 +24,19 @@ The five-step loop: **Plan → Brief → Dispatch → Review → Correct-or-land
 your judgment; 2 and 3 are mechanical. Full detail on every step is in
 [references/worker-brief.md](references/worker-brief.md) — read it before first dispatch.
 
+## The substrate: the flywheel CLI
+
+Flywheel is also a small Go CLI (this repo). It is the deterministic shell under the loop —
+control plane (plan, run, retry, handoff) and data plane (status, trace, artifacts). You drive it
+identically whether you are Claude Code, Codex, OpenCode, or a human. Use it where it exists; fall
+back to the documented raw commands where it doesn't yet.
+
+- `flywheel init --dir <target>` — scaffold `flywheel.md` + `.flywheel/state.json` + `.flywheel/briefs/`
+- `flywheel version` — print version
+- (more subcommands being built by the loop itself)
+
+State is the repo, not any vendor session: a correction or a handoff reads the same files.
+
 ## Invariants (hold these or don't run)
 
 - **Approved worker only.** Default `--model openrouter/deepseek/deepseek-v4-flash-0731`. Never silently switch
