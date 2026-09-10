@@ -1,13 +1,52 @@
 # flywheel
 
-A durable orchestrator-to-worker implementation loop. **Codex or Claude Code** act as the
-orchestrator — plan, brief, dispatch, validate. The **OpenCode CLI running DeepSeek**
-(`opencode-go/deepseek-v4-pro`) is the worker — code exploration, implementation, tests, and heavy
+A durable orchestrator-to-worker implementation loop. Frontier-model agents (Claude Code / Codex)
+act as the **orchestrator** — plan, brief, dispatch, validate. Cheap disposable agents (OpenCode CLI
+running a DeepSeek model) are the **workers** — code exploration, implementation, tests, and heavy
 work. The orchestrator writes precise bounded briefs and judges the evidence; it never implements
 the change itself.
 
-The loop in one picture. The `--session` edge is the point: a correction resumes the same worker,
-it never restarts it, and the orchestrator never writes the fix.
+This repo is both the **framework** (a small Go CLI: control plane + data plane) and the **skill**
+(prompt files that teach any agent or human how to drive the loop well).
+
+## The core idea
+
+**Repo is the session.** State lives in the repository as files, not inside any single vendor CLI
+session. That is what makes agents swappable: run out of tokens in Claude Code mid-session? A fresh
+head (Codex, OpenCode) reads the same state files and continues the same work. The loop survives
+any single agent.
+
+**Deterministic shell, non-deterministic agents.** A fixed workflow (plan → brief → dispatch →
+review → correct-or-land) rides on top of non-deterministic model agents. The workflow, contracts,
+and checks are deterministic; the agents are interchangeable.
+
+## Layout
+
+```
+cmd/flywheel/          CLI entry point (subcommand dispatch, flags)
+internal/flywheel/     core logic (init scaffold, state)
+skills/flywheel/       the skill: how to operate the loop (SKILL.md, references, evals)
+examples/              worked brief examples (gmail draft)
+.flywheel/             local runtime state (briefs, runs, learnings) — gitignored
+```
+
+## Install & validate
+
+```bash
+# build and test (single validation command)
+go build ./... && go vet ./... && go test ./...
+
+# install the CLI locally
+go install ./cmd/flywheel
+
+# scaffold a project's flywheel state
+flywheel init --dir <target>
+```
+
+## The loop
+
+The five steps: **Plan → Brief → Dispatch → Review → Correct-or-land**. Steps 1, 4, and 5 are
+orchestrator judgment; 2 and 3 are mechanical.
 
 ```mermaid
 flowchart TD
@@ -20,150 +59,34 @@ flowchart TD
     G -- "--session" --> C
 ```
 
-## Install
+## CLI (control plane + data plane)
 
-```bash
-npx skills add go2sujeet/flywheel --skill flywheel
-```
+| Command | Plane | What it does |
+| --- | --- | --- |
+| `flywheel init` | data | Scaffold `flywheel.md` + `.flywheel/state.json` + `.flywheel/briefs/` |
+| `flywheel version` | both | Print version |
 
-Requires the `opencode` CLI installed and authenticated (`opencode auth login`), plus git.
+More subcommands (`run`, `status`, `retry`, `handoff`, ...) are being built by the loop itself —
+see the [skill](skills/flywheel/SKILL.md) and `internal/` for the evolving surface.
 
-## Usage
+## Operating the loop (agents and humans)
 
-Invoke the skill when you want to run an autonomous build/test/fix cycle through the worker, or keep
-yourself in the reviewer/validator role.
+Any agent — or a human — can drive flywheel. Load the skill, follow the loop, keep the boundary:
 
-1. **Plan & brief** — decompose into bounded tasks and write each brief to a file (goal, exact
-   change, don't-touch list, task-specific tests, report contract — the worker auto-loads
-   AGENTS.md/CLAUDE.md, so omit what it already knows). See
-   `skills/flywheel/references/worker-brief.md`; worked examples live in [`examples/`](examples/).
-2. **Dispatch (fresh run)** — verify flags (`opencode run --help`), then run the safe quoted file
-   brief with `--auto` (required non-interactively), a `--title` label, and `--format json` to
-   capture the emitted session id:
+- **Orchestrator never implements.** You plan, brief, judge; the worker writes the code.
+- **Worker unavailable → report the blocker, don't take over.**
+- **No unrequested commits/pushes; no secrets in briefs.**
+- **Approved worker model, one knob:** `openrouter/deepseek/deepseek-v4-flash-0731` (see
+  `skills/flywheel/SKILL.md`; the config lives in one place, not scattered).
 
-   ```bash
-   opencode run -m opencode-go/deepseek-v4-pro --auto --title "flywheel-task" --format json \
-     "$(cat .flywheel/briefs/<id>.txt)"; rc=$?
-   # save rc AND the sessionID emitted in the JSON output — use it for --session below
-   ```
+Full rules: [skills/flywheel/SKILL.md](skills/flywheel/SKILL.md) and
+[skills/flywheel/references/worker-brief.md](skills/flywheel/references/worker-brief.md).
 
-   `--auto` is required: without it the worker hangs on a permission prompt nobody can answer the
-   first time it writes a file; `opencode.jsonc` permission config is the narrower alternative.
+## Learnings
 
-3. **Review** — judge the actual exit status and `git diff`; re-run gates independently when needed.
-4. **Correct or land** — send a correction by resuming the **emitted** session id (never an invented
-   one); the orchestrator sends implementation changes to the worker, never writes them itself:
+`.flywheel/learnings.md` is the dogfood log — every loop writes what it hurt into the design. It is
+how the framework improves itself: friction becomes spec.
 
-   ```bash
-   opencode run -m opencode-go/deepseek-v4-pro --auto --session "<emitted-sessionID>" \
-     --format json "$(cat .flywheel/briefs/<id>.delta.txt)"
-   ```
+## License
 
-   `--format json` matters on resumes too: without it the resume emits human-formatted output, not
-   JSONL.
-
-Rules: disjoint file ownership for concurrent workers; preserve dirty edits; report the blocker and
-halt if the worker is unavailable; no automatic commits/pushes; no secrets in prompts. Fresh runs use
-`--auto` + `--title` + `--format json`; `--session` accepts only an existing emitted session id, and
-resumes need `--format json` too.
-
-## The boundary
-
-Everything the loop does is split cleanly in two: the orchestrator plans and judges, the worker
-executes. Implementation never crosses upward — that single rule is the skill's core invariant.
-
-```mermaid
-flowchart TD
-    subgraph O["Orchestrator"]
-        O1[Plan]
-        O2["Write briefs"]
-        O3["Judge exit status and diff"]
-        O4["Re-run gates"]
-        O5[Decide]
-    end
-    subgraph W["Worker"]
-        W1["Explore code"]
-        W2[Implement]
-        W3["Run tests"]
-        W4[Report]
-    end
-    O2 -- "brief down" --> W1
-    W4 -- "evidence back" --> O3
-```
-
-## Concurrency
-
-Parallel workers are allowed only under disjoint file ownership. But files disjoint does not mean
-tasks independent — one task may compile against a signature another task is writing.
-
-```mermaid
-flowchart TD
-    subgraph WA["Worker A"]
-        A["file-a.rs"]
-    end
-    subgraph WB["Worker B"]
-        B["file-b.rs"]
-    end
-    A -. "signature, not a file" .-> B
-    L["lib.rs registration file"]
-    A --> L
-    B --> L
-```
-
-Registration files like `lib.rs` are choke points almost every task wants to touch: serialize on
-them or give one task sole ownership. Between batches, run the cleanup-and-verify step from
-Troubleshooting — verify zero opencode processes, never mid-flight — they accumulate silently and
-only show up later as unexplained stalls.
-
-## Troubleshooting
-
-When a dispatch is not finishing, branch on the evidence instead of guessing:
-
-```mermaid
-flowchart TD
-    A["Dispatch is not finishing"] --> B{"rc nonzero?"}
-    B -- yes --> C["Run failed to execute: check args, binary, auth"]
-    B -- no --> D{"wc -c output shows zero bytes?"}
-    D -- yes --> E["Silent stall: verify no dispatch running, pkill serve, verify clean, re-dispatch"]
-    D -- no --> F{"Events stop after tool calls?"}
-    F -- yes --> G["Permission block: add --auto"]
-    F -- no --> H["Still writing: healthy, wait"]
-```
-
-| Symptom | Fix |
-| --- | --- |
-| Worker hangs on the first file write | Re-dispatch with `--auto` (permission block; `opencode.jsonc` is the narrower alternative). |
-| Output file has zero bytes after ~30s | Silent stall — confirm with `wc -c`, then run the recovery protocol below (precondition first) and re-dispatch. |
-| Exit status `144` | Your own `pkill` — expected, not a worker failure. |
-| Resume output is not JSONL | Re-dispatch the resume with `--format json`. |
-
-**Recovery from a stall — precondition first.** Cleanup is a precondition, not a remedy: verify the
-environment is clean before every dispatch that follows another one, and never clean up while a
-dispatch is running.
-
-```bash
-pgrep -f "opencode run" | wc -l    # MUST be 0 — never clean up mid-flight
-pkill -f "opencode serve"
-pgrep -x opencode | wc -l          # MUST be 0 before dispatching
-```
-
-1. **Never kill `opencode serve` while any dispatch is running** — it is shared, and killing it
-   takes down healthy work. This looks exactly like a mysterious race condition, but it is
-   self-inflicted: the `pgrep -f "opencode run"` count MUST be 0 before any cleanup.
-2. **Verify with `pgrep -x opencode`, never a `-f` pattern match** — `-f`/`-fl` reads full command
-   lines, and a dispatch passes its brief as an argument, so a brief mentioning opencode inflates
-   the count (observed 67 when the true state was one server and zero orphans). `pgrep -x` matches
-   the process name exactly.
-3. **A verified-clean environment strongly improves the odds, but it is not a cure.** Treat it as a
-   precondition for a dispatch rather than a post-stall
-   remedy.** Dispatching from a state verified as zero opencode processes produced output within a
-   second, three times in a row; without verifying, the same brief stalled repeatedly. Honest caveat: this is not a complete explanation. A dispatch has also stalled AFTER a verified-clean check, and has succeeded with a stray process present. Long, multi-step briefs stall far more than short ones. Cleaning up first clearly helps and costs nothing; it is not a guarantee, and the underlying cause is not fully understood.
-
-Run the cleanup-and-verify as its **own step** and read the numbers before dispatching — an
-orchestrator that runs cleanup and dispatch in one shell command cannot see the verification output
-once the dispatch is backgrounded, so it cannot confirm the precondition held (this alone caused two
-inexplicable stalls). Normal completion leaks a `serve` process, so if dispatches stall after a long
-session, check for orphans before blaming the model or the network.
-
-Full detail lives in `skills/flywheel/references/worker-brief.md` — this table is a scannable
-index, not a replacement.
+MIT — see [LICENSE](LICENSE).

@@ -1,7 +1,7 @@
 # Worker Brief — how to run the flywheel loop safely
 
 This is the operating manual for the orchestrator (Codex or Claude Code). The worker is the OpenCode
-CLI running `opencode-go/deepseek-v4-pro`. Everything below is a rule, not a suggestion.
+CLI running `openrouter/deepseek/deepseek-v4-flash-0731`. Everything below is a rule, not a suggestion.
 
 ## 1. Precise, bounded briefs
 
@@ -41,11 +41,11 @@ brief quoted into a single argument — quoting the `$(cat ...)` substitution pr
 and glob expansion and keeps the brief out of your editing surface:
 
 ```bash
-opencode run -m opencode-go/deepseek-v4-pro --auto --title "flywheel-task" --format json \
+opencode run -m openrouter/deepseek/deepseek-v4-flash-0731 --auto --title "flywheel-task" --format json \
   "$(cat .flywheel/briefs/<id>.txt)"; rc=$?
 ```
 
-- `-m opencode-go/deepseek-v4-pro` is the **approved default**. Never silently switch providers or
+- `-m openrouter/deepseek/deepseek-v4-flash-0731` is the **approved default**. Never silently switch providers or
   models. Never claim a model is free: measured at ~60k input tokens (~$0.04) of harness overhead per
   dispatch regardless of task size, with no prompt caching observed (cache read/write both zero), so a
   custom agent definition would relocate tokens rather than save them. Prefer fewer, larger,
@@ -155,7 +155,7 @@ the implementation itself. Resume the worker's session using the **emitted sessi
 brief (only the correction, not a restated task):
 
 ```bash
-opencode run -m opencode-go/deepseek-v4-pro --auto --session "<emitted-sessionID>" \
+opencode run -m openrouter/deepseek/deepseek-v4-flash-0731 --auto --session "<emitted-sessionID>" \
   "$(cat .flywheel/briefs/<id>.delta.txt)"
 ```
 

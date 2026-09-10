@@ -3,7 +3,7 @@ name: flywheel
 description: >-
   Drive a durable orchestrator-to-worker implementation loop. Codex or Claude Code act as the
   orchestrator (plan, brief, dispatch, validate); the OpenCode CLI running the approved worker
-  model `opencode-go/deepseek-v4-pro` does code exploration, implementation, tests, and heavy
+  model `openrouter/deepseek/deepseek-v4-flash-0731` does code exploration, implementation, tests, and heavy
   work. Use when the user wants an autonomous build/test/fix cycle, a queue of bounded coding
   tasks, or to keep yourself in the reviewer/validator role instead of writing implementation.
   When the worker is unavailable (missing `opencode` CLI or unauthenticated model), report the
@@ -24,9 +24,22 @@ The five-step loop: **Plan → Brief → Dispatch → Review → Correct-or-land
 your judgment; 2 and 3 are mechanical. Full detail on every step is in
 [references/worker-brief.md](references/worker-brief.md) — read it before first dispatch.
 
+## The substrate: the flywheel CLI
+
+Flywheel is also a small Go CLI (this repo). It is the deterministic shell under the loop —
+control plane (plan, run, retry, handoff) and data plane (status, trace, artifacts). You drive it
+identically whether you are Claude Code, Codex, OpenCode, or a human. Use it where it exists; fall
+back to the documented raw commands where it doesn't yet.
+
+- `flywheel init --dir <target>` — scaffold `flywheel.md` + `.flywheel/state.json` + `.flywheel/briefs/`
+- `flywheel version` — print version
+- (more subcommands being built by the loop itself)
+
+State is the repo, not any vendor session: a correction or a handoff reads the same files.
+
 ## Invariants (hold these or don't run)
 
-- **Approved worker only.** Default `--model opencode-go/deepseek-v4-pro`. Never silently switch
+- **Approved worker only.** Default `--model openrouter/deepseek/deepseek-v4-flash-0731`. Never silently switch
   providers or models, and never assert a metered model is free — measured at ~60k input tokens
   (~$0.04) of harness overhead per dispatch, regardless of task size, with no prompt caching
   observed. Prefer fewer, larger briefs. If no approved worker is available, stop and ask — don't
@@ -56,7 +69,7 @@ Verify the CLI first (`opencode run --help` — confirm flags before relying on 
 so you can capture the session id:
 
 ```bash
-opencode run -m opencode-go/deepseek-v4-pro --auto --title "flywheel-task" --format json \
+opencode run -m openrouter/deepseek/deepseek-v4-flash-0731 --auto --title "flywheel-task" --format json \
   "$(cat .flywheel/briefs/<id>.txt)"; rc=$?
 ```
 
@@ -82,7 +95,7 @@ The worker runs tests itself. You do not run the tests for it; you judge its res
   delta brief (never implement it yourself, never invent the session id):
 
 ```bash
-opencode run -m opencode-go/deepseek-v4-pro --auto --session "<emitted-sessionID>" \
+opencode run -m openrouter/deepseek/deepseek-v4-flash-0731 --auto --session "<emitted-sessionID>" \
   "$(cat .flywheel/briefs/<id>.delta.txt)"
 ```
 
