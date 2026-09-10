@@ -30,7 +30,7 @@ Placeholder: completed tasks are logged here.
 
 // Field order is the JSON key order; the spec pins it to version, status, tasks.
 type stateFile struct {
-	Version int   `json:"version"`
+	Version int    `json:"version"`
 	Status  string `json:"status"`
 	Tasks   []any  `json:"tasks"`
 }
