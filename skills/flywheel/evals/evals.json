@@ -4,12 +4,12 @@
     {
       "id": 1,
       "name": "bounded-bug-fix-loop",
-      "prompt": "You are the flywheel orchestrator. The user reports: login returns 500 when the email field is empty instead of a 400 validation error. Walk through dispatching this as a bounded bug fix to the OpenCode worker (model opencode-go/deepseek-v4-pro), including the brief contents, the exact dispatch command, and how you review and correct the result.",
+      "prompt": "You are the flywheel orchestrator. The user reports: login returns 500 when the email field is empty instead of a 400 validation error. Walk through dispatching this as a bounded bug fix to the OpenCode worker (model openrouter/deepseek/deepseek-v4-flash-0731), including the brief contents, the exact dispatch command, and how you review and correct the result.",
       "expected_output": "A complete bounded-bug-fix loop: a precise single-task brief (goal, current state, exact change, don't-touch list, real gate commands, report contract), a safe quoted file-brief dispatch via the opencode CLI with the approved model plus --title and --format json, exit-status capture, git-diff review plus independent gate re-run, and a correction path that resumes the emitted session id with a delta brief rather than implementing the fix.",
       "files": [],
       "expectations": [
         "Writes a bounded single-task brief stating goal, current state, exact change, don't-touch list, the repo's actual gate commands, and a report contract.",
-        "Dispatches with `opencode run -m opencode-go/deepseek-v4-pro --title flywheel-task --format json` using a safe quoted file brief (cat into a single quoted argument) and captures the exit status.",
+        "Dispatches with `opencode run -m openrouter/deepseek/deepseek-v4-flash-0731 --title flywheel-task --format json` using a safe quoted file brief (cat into a single quoted argument) and captures the exit status.",
         "Records the session id emitted in the JSON output and uses only that emitted id for a later --session resume, never an invented flywheel-id string.",
         "Reviews the actual exit status and the git diff against the brief rather than trusting the worker's self-report.",
         "Runs validation commands independently when needed, but sends any implementation change to the worker.",
