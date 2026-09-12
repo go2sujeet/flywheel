@@ -52,7 +52,7 @@ func runInit(args []string) {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	dir := fs.String("dir", ".", "target directory (default: current working directory)")
-	force := fs.Bool("force", false, "overwrite an existing flywheel.md")
+	force := fs.Bool("force", false, "reset existing flywheel.md and .flywheel/state.json (directories and symlinks are still refused)")
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "flywheel init: %v\n", err)
 		usage(os.Stderr)
