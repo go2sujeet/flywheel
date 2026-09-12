@@ -1,0 +1,79 @@
+name: ci
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Version script tests
+        shell: bash
+        run: bash scripts/next-version_test.sh
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt check
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: Cross-compile release targets
+        run: |
+          set -euo pipefail
+          for spec in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            GOOS="${spec%/*}"
+            GOARCH="${spec#*/}"
+            CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -o /dev/null ./cmd/flywheel
+          done
+      - name: Eval files parse as JSON
+        run: |
+          for f in skills/*/evals/*.json; do
+            node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$f"
+          done
+
+  pr-title:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Check PR title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          re='^(feat|fix|perf|docs|refactor|revert|chore|ci|test|style|build)(\([^)]+\))?!?: .+'
+          if ! [[ "$TITLE" =~ $re ]]; then
+            echo "PR title must be a conventional commit: <type>(<scope>)!: <subject>" >&2
+            echo "allowed types: feat fix perf docs refactor revert chore ci test style build" >&2
+            echo "which release: feat -> minor; fix/perf/docs/refactor/revert -> patch;" >&2
+            echo "'!' before the colon -> breaking (major, or minor while major is 0); others -> no release" >&2
+            exit 1
+          fi
