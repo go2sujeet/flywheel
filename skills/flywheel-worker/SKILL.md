@@ -44,9 +44,17 @@ A brief is a plain-text file with these parts:
    don't-touch list was touched, and anything uncertain or left undone.
 5. **Never commit, never push, never secrets.** Committing is the orchestrator's/user's call. No
    credentials, keys, or tokens in any output you produce for the brief.
-6. **Windows/PowerShell reality.** This environment is PowerShell 5.1: `/dev/null`, `head`,
-   `2>/dev/null` do not exist; use `$null`, `Select-Object -First`, and `2>&1`. Toolchains may not
-   be on PATH — use absolute paths (e.g. `C:\Program Files\Go\bin\go.exe`) or report if absent.
+6. **Detect your OS and shell — don't assume.** Check what you're running on (`$PSVersionTable` /
+   `$env:OS` on Windows; `uname` / `$SHELL` on macOS/Linux) and use that shell's syntax, not a
+   universal one:
+   - **PowerShell (Windows):** `/dev/null`, `head`, and `2>/dev/null` do not exist. Discard
+     stderr with `2>$null` — never `2>&1`, which *merges* stderr into stdout. Limit output with
+     `Select-Object -First`. Toolchains may not be on PATH — invoke absolute executable paths
+     with the call operator: `& "C:\Program Files\Go\bin\go.exe" build ./...` — or report if
+     absent.
+   - **Bash/sh (macOS/Linux):** `/dev/null`, `head`, and `2>/dev/null` are standard. Tools are
+     usually on PATH (`go build ./...`); fall back to absolute paths only when a tool is missing
+     from PATH, and report if absent.
 7. **Corrections resume, they don't restart.** If the orchestrator resumes your session with a
    delta brief, treat it as the same task continued: keep prior context, apply only the delta.
 8. **Blocked → report and halt.** Environment broken, tool missing, file on the don't-touch list
