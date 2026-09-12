@@ -43,6 +43,17 @@ go install ./cmd/flywheel
 flywheel init --dir <target>
 ```
 
+## CI/CD
+
+- **`ci`** runs build, vet, and tests on Linux, Windows and macOS, plus gofmt, a cross-compile of
+  all release targets, eval JSON parsing, and a PR-title check, on every PR and push to main.
+- **`release`** runs on every push to main: it computes the next version from conventional-commit
+  subjects since the last `vX.Y.Z` tag and publishes a GitHub release with binaries for five
+  platforms and `checksums.txt`.
+- Bump rules, highest wins: `type!` or `BREAKING CHANGE:` → major (minor while major is 0);
+  `feat` → minor; `fix`/`perf`/`docs`/`refactor`/`revert` → patch; anything else → no release.
+- PRs are squash-merged, so the PR title decides the bump.
+
 ## The loop
 
 The five steps: **Plan → Brief → Dispatch → Review → Correct-or-land**. Steps 1, 4, and 5 are
