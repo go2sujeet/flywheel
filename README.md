@@ -45,14 +45,16 @@ flywheel init --dir <target>
 
 ## CI/CD
 
-- **`ci`** runs build, vet, and tests on Linux, Windows and macOS, plus gofmt, a cross-compile of
-  all release targets, eval JSON parsing, and a PR-title check, on every PR and push to main.
-- **`release`** runs on every push to main: it computes the next version from conventional-commit
-  subjects since the last `vX.Y.Z` tag and publishes a GitHub release with binaries for five
-  platforms and `checksums.txt`.
+- **`ci`** runs on every PR and push to main: build, vet, and tests on Linux, Windows and macOS,
+  gofmt, a cross-compile of all release targets, JSON parsing, and a PR-title check.
+- **`release`** keeps one release PR open. Each merge to main updates it with the next version
+  and a CHANGELOG.md entry; merging that PR tags `vX.Y.Z`, publishes the GitHub release with the
+  changelog notes, and a second job attaches binaries for five platforms plus `checksums.txt`.
 - Bump rules, highest wins: `type!` or `BREAKING CHANGE:` → major (minor while major is 0);
   `feat` → minor; `fix`/`perf`/`docs`/`refactor`/`revert` → patch; anything else → no release.
 - PRs are squash-merged, so the PR title decides the bump.
+- The release PR is opened by GitHub Actions, so CI checks do not run on it (a GITHUB_TOKEN
+  limitation).
 
 ## The loop
 
