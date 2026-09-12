@@ -2,15 +2,15 @@
 name: flywheel
 description: >-
   Drive a durable orchestrator-to-worker implementation loop. Codex or Claude Code act as the
-  orchestrator (plan, brief, dispatch, validate); the OpenCode CLI running the approved worker
-  model `openrouter/deepseek/deepseek-v4-flash-0731` does code exploration, implementation, tests, and heavy
-  work. Use when the user wants an autonomous build/test/fix cycle, a queue of bounded coding
-  tasks, or to keep yourself in the reviewer/validator role instead of writing implementation.
-  When the worker is unavailable (missing `opencode` CLI or unauthenticated model), report the
-  blocker and do not take over implementation yourself.
+  orchestrator (plan, brief, dispatch, validate); the OpenCode CLI running the approved DeepSeek
+  worker model does code exploration, implementation, tests, and heavy work. Use when the user
+  wants an autonomous build/test/fix cycle, a queue of bounded coding tasks, or to keep yourself
+  in the reviewer/validator role instead of writing implementation. When the worker is unavailable
+  (missing `opencode` CLI, unauthenticated model, or a provider failure), report the blocker and
+  do not take over implementation yourself.
 license: MIT
 metadata:
-  version: 0.1.0
+  version: 0.2.0
 ---
 
 # Flywheel
@@ -39,14 +39,23 @@ State is the repo, not any vendor session: a correction or a handoff reads the s
 
 ## Invariants (hold these or don't run)
 
-- **Approved worker only.** Default `--model openrouter/deepseek/deepseek-v4-flash-0731`. Never silently switch
-  providers or models, and never assert a metered model is free — measured at ~60k input tokens
-  (~$0.04) of harness overhead per dispatch, regardless of task size, with no prompt caching
-  observed. Prefer fewer, larger briefs. If no approved worker is available, stop and ask — don't
-  guess.
+- **Approved worker only.** The model is set once, here:
+  ```bash
+  MODEL=openrouter/deepseek/deepseek-v4-flash-0731   # approved default
+  ```
+  The user may choose another model: change this line, not the commands. Never switch silently;
+  resuming on a different model needs the user's OK
+  ([references/worker-brief.md#8-blocker-protocol-do-not-take-over](references/worker-brief.md#8-blocker-protocol-do-not-take-over)).
+  Never assert a metered model is free; providers cache most of each dispatch's ~46k-token harness
+  context (a 2026-09-12 probe read 46,310 of 46,324 tokens from cache and cost $0.0004; the field
+  run read ~90 % of all input from cache), so check `tokens.cache.read` in your own runs. Large
+  scope per brief is fine; large single writes are not, so every brief carries the write rule. If
+  no approved worker is available, stop and ask — don't guess.
 - **Orchestrator never implements.** You send corrections to the worker; you do not write the fix.
 - **Worker unavailable → report blocker, do not take over.** If the `opencode` CLI is missing, the
-  model is unauthenticated, or the session cannot be resumed, report the blocker and halt.
+  model is unauthenticated, the session cannot be resumed, or a provider error hits (per-key
+  limit, out of credits, a consent gate such as China hosting), report the blocker and halt
+  ([references/worker-brief.md#8-blocker-protocol-do-not-take-over](references/worker-brief.md#8-blocker-protocol-do-not-take-over)).
 - **No unrequested commits, pushes, or secrets.** The worker must not commit; you commit only when
   the user asks. Never put secrets or keys in a brief.
 - **DRY.** Use the `opencode` CLI directly. Do not copy scripts or scaffold a framework. The
@@ -56,12 +65,15 @@ State is the repo, not any vendor session: a correction or a handoff reads the s
 
 ### 1. Plan & brief
 Decompose the request into bounded, single-purpose tasks. Write each brief to a file (safe quoting,
-no secrets): goal, exact change, don't-touch list of uncommitted in-flight files, task-specific
-tests, and a report contract. The worker auto-loads AGENTS.md/CLAUDE.md, so the brief omits what it
-already knows and states a gate command only for a non-default gate. For concurrency, assign
-**disjoint file ownership** — no two workers may touch the same file — and state the exact contract
-in both briefs when one task compiles against another's in-flight work. Template and rules:
-[references/worker-brief.md](references/worker-brief.md).
+no secrets): an `owns:`/`needs:` header, goal, exact change, don't-touch list of uncommitted
+in-flight files, task-specific tests, a report contract, and the write rule — one tool call per
+response; at most 120 lines written per tool call. The worker auto-loads AGENTS.md/CLAUDE.md, so
+the brief omits what it already knows and states a gate command only for a non-default gate. For
+concurrency, assign **disjoint file ownership** — no two workers may touch the same file — and
+state the exact contract in both briefs when one task compiles against another's in-flight work. A
+task is ready when its `needs:` have landed and its `owns:` is disjoint from in-flight work
+([references/worker-brief.md#4-concurrency-disjoint-file-ownership-preserve-dirty-edits](references/worker-brief.md#4-concurrency-disjoint-file-ownership-preserve-dirty-edits)).
+Template and rules: [references/worker-brief.md](references/worker-brief.md).
 
 ### 2. Dispatch (safe quoted file brief)
 Verify the CLI first (`opencode run --help` — confirm flags before relying on them), then a
@@ -69,23 +81,40 @@ Verify the CLI first (`opencode run --help` — confirm flags before relying on 
 so you can capture the session id:
 
 ```bash
-opencode run -m openrouter/deepseek/deepseek-v4-flash-0731 --auto --title "flywheel-task" --format json \
-  "$(cat .flywheel/briefs/<id>.txt)"; rc=$?
+mkdir -p .flywheel/runs
+opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
+  "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.jsonl; rc=$?
 ```
 
-`--auto` is required for non-interactive dispatch: without it the worker hangs on a permission prompt
-nobody can answer the first time it writes a file. (`opencode.jsonc` permission config is the
-narrower alternative if you prefer not to auto-approve.) Capture the exit status (`rc` above) **and
-the session id emitted in the JSON output** — both are evidence. `--session` accepts only that
-emitted id; it never takes an invented string.
+Session id (every JSONL event carries it):
+
+```bash
+grep -o '"sessionID":"[^"]*"' .flywheel/runs/<id>.jsonl | head -1
+```
+
+`< /dev/null` closes stdin: in a non-TTY shell (an agent's shell tool, CI) `opencode run` waits on
+an open stdin and writes nothing after startup, which looks exactly like a stall. Dispatch from
+bash (Git Bash on Windows). `--pure` skips external plugins so the worker always gets OpenCode's
+default `build` agent; a global plugin once swapped the agent and the worker looped on reads
+without editing. `--auto` is required for non-interactive dispatch: without it the worker hangs on
+a permission prompt nobody can answer. Capture the exit status (`rc` above) **and the session id
+emitted in the JSON output** — both are evidence. `--session` accepts only that emitted id; it
+never takes an invented string.
 
 ### 3. Execute
 The worker runs tests itself. You do not run the tests for it; you judge its results afterward.
+Expect the first event within about 30 s. If a run is silent after 60 s or ends early, classify it
+before retrying ([references/worker-brief.md#3-run-states-and-failures](references/worker-brief.md#3-run-states-and-failures));
+check the opencode log for provider errors before calling it a stall. Never kill opencode processes
+by name.
 
 ### 4. Review — judge evidence, never trust self-report
 - **Actual exit status** (`rc`): nonzero means the run failed to execute — investigate, don't
   proceed. Zero means it ran; it does **not** mean the task is correct.
 - **`git diff`** against the brief: did it do what was asked, nothing more and nothing less?
+- Watch the recurring traps: gate failures in files the worker does not own, edits outside `owns:`,
+  and tests that pass only as a superuser
+  ([references/worker-brief.md#6-review-exit-status--diff-and-independent-validation](references/worker-brief.md#6-review-exit-status--diff-and-independent-validation)).
 - **Independent validation when needed:** re-run the gates yourself on sensitive or suspicious
   changes; treat "tests passed" as a claim to be verified, not a fact. You may run validation
   commands independently — but send any implementation change to the worker.
@@ -95,17 +124,15 @@ The worker runs tests itself. You do not run the tests for it; you judge its res
   delta brief (never implement it yourself, never invent the session id):
 
 ```bash
-opencode run -m openrouter/deepseek/deepseek-v4-flash-0731 --auto --session "<emitted-sessionID>" \
-  "$(cat .flywheel/briefs/<id>.delta.txt)"
+opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
+  "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null >> .flywheel/runs/<id>.jsonl; rc=$?
 ```
-
-Without `--format json`, a resume emits human-formatted output, not JSONL — pass `--format json` on
-the resume to parse it, or read the output as text.
 
 - Correct and gate-passing → surface the result; commit **only** if the user asked you to.
 
 ## References
 
 - [references/worker-brief.md](references/worker-brief.md) — the full brief template, concurrency
-  and dirty-edit rules, process/session handles, exit-status and diff review, the correction loop,
-  and the blocker/do-not-take-over protocol.
+  and dirty-edit rules, process/session handles, run states and failures, provider errors,
+  exit-status and diff review, the correction loop, Windows process handling, and the
+  blocker/do-not-take-over protocol.

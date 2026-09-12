@@ -10,7 +10,7 @@ description: >-
   handoff is done by writing state files and passing emitted session IDs by hand.
 license: MIT
 metadata:
-  version: 0.1.0
+  version: 0.2.0
 ---
 
 # Flywheel Operator
@@ -55,39 +55,46 @@ Everything is files — no database.
 | `flywheel.md` | Human-readable state: Status, Main session, Workers, Roles, Task log. |
 | `.flywheel/state.json` | Machine-precise state: `version`, `status`, `tasks[]`. |
 | `.flywheel/briefs/` | One file per task brief (`<id>.txt`) and per correction (`<id>.delta.txt`). |
-| `.flywheel/runs/` | Planned: raw dispatch output (JSONL) per run — create it by hand until `run` lands. |
+| `.flywheel/runs/` | Raw dispatch output (JSONL) per run, written by the dispatch command's redirect. |
 | `.flywheel/learnings.md` | Dogfood log — friction becomes spec (create it by hand). |
 
 **Repo is the session.** State lives in files, not in any vendor CLI session. That is what makes
-handoff free: a new head reads the same files and continues. Because `handoff` is not built yet,
-transfer is manual — write the current state into `flywheel.md` and the brief files, and pass the
-emitted session ID by hand to the next head.
+handoff free: a new head reads the same files and continues. Helper scripts and notes must live in
+the repo, never in a per-session scratch directory — a session restart loses them. Because
+`handoff` is not built yet, transfer is manual — write the current state into `flywheel.md` and
+the brief files, and pass the emitted session ID by hand to the next head.
 
 ## Operating the loop
 
 The CLI has no plan/run/retry/handoff commands yet, so each step is done with files and raw
 commands. `flywheel init` only scaffolds; the loop below is the manual fallback and runs on the
-same state files the planned subcommands will automate.
+same state files the planned subcommands will automate. `$MODEL` is set once in
+`skills/flywheel/SKILL.md` → Invariants.
 
 1. **Plan** — decompose into bounded single-purpose tasks; each gets a brief file:
    `cat > .flywheel/briefs/<id>.txt` with goal, exact change, don't-touch list, required gates,
    report contract.
 2. **Brief** — the brief file from step 1 is the brief: goal, exact change, don't-touch list,
    required gates, report contract.
-3. **Dispatch (manual fallback)** — run the worker directly, capture rc and sessionID:
+3. **Dispatch (manual fallback)** — fresh run, capture rc and sessionID:
    ```bash
-   opencode run -m openrouter/deepseek/deepseek-v4-flash-0731 --auto --title "task-id" --format json \
-     "$(cat .flywheel/briefs/<id>.txt)"; rc=$?
+   mkdir -p .flywheel/runs
+   opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
+     "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.jsonl; rc=$?
    ```
-   Record the exit code and the emitted session ID by hand (append to `.flywheel/runs/<id>.jsonl`
-   or note them in `flywheel.md`) — `flywheel run` will do this when it lands.
+   Session id (every JSONL event carries it):
+   ```bash
+   grep -o '"sessionID":"[^"]*"' .flywheel/runs/<id>.jsonl | head -1
+   ```
+   Record the exit code and the emitted session ID in `flywheel.md` — `flywheel run` will do this
+   when it lands.
 4. **Review** — judge the actual exit status and `git diff`, never self-report. Re-run gates
    independently on sensitive changes.
 5. **Correct or land (manual fallback)** — resume the emitted session ID with a delta brief for
    corrections. Pass the session ID by hand; there is no automatic handoff:
    ```bash
-   opencode run -m openrouter/deepseek/deepseek-v4-flash-0731 --auto --session "<emitted-sessionID>" \
-     --format json "$(cat .flywheel/briefs/<id>.delta.txt)"
+   opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
+     "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null >> .flywheel/runs/<id>.jsonl; rc=$?
    ```
 
 ## Control plane vs data plane
@@ -117,9 +124,13 @@ go test ./...            # one-command validation
 git status               # what's dirty
 cat .flywheel/state.json # machine state
 cat .flywheel/learnings.md # what the loop has taught itself (create by hand until planned)
+grep '<sessionID>' ~/.local/share/opencode/log/opencode.log | tail -20   # provider errors (key limits) show up only here
 ```
 
-If a dispatch stalls or fails, report the blocker and halt — never take over the worker's job.
+If a dispatch stalls or fails, classify the run first
+([../flywheel/references/worker-brief.md#3-run-states-and-failures](../flywheel/references/worker-brief.md#3-run-states-and-failures)),
+then report the blocker and halt — never take over the worker's job. Never kill opencode processes
+by name; on Windows that can kill OpenCode Desktop.
 
 ## Files to read
 
