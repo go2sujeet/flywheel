@@ -76,8 +76,8 @@ Any agent — or a human — can drive flywheel. Load the skill, follow the loop
 - **Orchestrator never implements.** You plan, brief, judge; the worker writes the code.
 - **Worker unavailable → report the blocker, don't take over.**
 - **No unrequested commits/pushes; no secrets in briefs.**
-- **Approved worker model, one knob:** `openrouter/deepseek/deepseek-v4-flash-0731` (see
-  `skills/flywheel/SKILL.md`; the config lives in one place, not scattered).
+- **Approved worker model, one knob:** set once in
+  [skills/flywheel/SKILL.md](skills/flywheel/SKILL.md) → Invariants.
 
 Full rules: [skills/flywheel/SKILL.md](skills/flywheel/SKILL.md) and
 [skills/flywheel/references/worker-brief.md](skills/flywheel/references/worker-brief.md).

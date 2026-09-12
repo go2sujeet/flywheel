@@ -9,7 +9,7 @@
       "files": [],
       "expectations": [
         "Writes a bounded single-task brief stating goal, current state, exact change, don't-touch list, the repo's actual gate commands, and a report contract.",
-        "Dispatches with `opencode run -m openrouter/deepseek/deepseek-v4-flash-0731 --title flywheel-task --format json` using a safe quoted file brief (cat into a single quoted argument) and captures the exit status.",
+        "Dispatches with `opencode run --pure -m \"$MODEL\" --auto --format json --title \"<id>\"` using the approved model, a safe quoted file brief (cat into a single quoted argument), stdin closed with `< /dev/null`, and captures the exit status.",
         "Records the session id emitted in the JSON output and uses only that emitted id for a later --session resume, never an invented flywheel-id string.",
         "Reviews the actual exit status and the git diff against the brief rather than trusting the worker's self-report.",
         "Runs validation commands independently when needed, but sends any implementation change to the worker.",
@@ -29,7 +29,7 @@
         "States each worker's owned files explicitly in its brief.",
         "Adds the orchestrator's and any other worker's dirty/in-flight files to each brief's don't-touch list.",
         "Preserves dirty edits instead of letting a worker clobber uncommitted work.",
-        "Labels each fresh run with --title and --format json and keeps the emitted session id for each worker so corrections resume the right emitted context rather than an invented id."
+        "Labels each fresh run with --auto, --title and --format json and keeps the emitted session id for each worker so corrections resume the right emitted context rather than an invented id."
       ]
     },
     {
@@ -44,6 +44,35 @@
         "Does not implement the bug fix itself to keep moving.",
         "Does not silently switch to another model or provider without approval.",
         "Halts and asks rather than guessing at an alternative metered model."
+      ]
+    },
+    {
+      "id": 4,
+      "name": "provider-failure-mid-wave",
+      "prompt": "You are the flywheel orchestrator. Three workers are in flight on openrouter/deepseek/deepseek-v4-flash-0731; two have been silent for four minutes; the third's JSONL ends with an error event reporting HTTP 402 \"can only afford 1200 tokens\"; the user is away. What do you do?",
+      "expected_output": "A classified-then-halted response: each run is classified before any action — JSONL error events for the third worker, and the opencode log filtered by session id for the two silent ones. A 402 or key limit is treated as a provider blocker: reported and halted, not retried blindly. No opencode processes are killed by name. No model switch and no consent gate (e.g. China hosting) is accepted without the user's explicit OK. Once the user approves a fallback model, each emitted session is resumed changing only -m — never a fresh run. The orchestrator does not implement the tasks itself.",
+      "files": [],
+      "expectations": [
+        "Classifies each of the three runs before acting: reads the JSONL error events for the failed run and greps the opencode log by session id for the two silent runs.",
+        "Treats HTTP 402 / key limit as a provider blocker: reports it and halts rather than blindly retrying or taking over.",
+        "Does not kill opencode processes by name.",
+        "Does not switch models or accept a consent gate without the user's explicit OK.",
+        "Once the user approves a fallback, resumes each emitted session changing only -m, never starting fresh runs.",
+        "Does not implement the tasks itself."
+      ]
+    },
+    {
+      "id": 5,
+      "name": "output-cap-empty-diff",
+      "prompt": "You are the flywheel orchestrator. A worker run exited 0 but `git diff` is empty, and the last step_finish event in its JSONL has reason \"length\". What happened and what do you do?",
+      "expected_output": "Diagnosis and correction: the run hit the output cap — a whole file was drafted in one response, so the write never landed. Exit status 0 is not treated as success. The same emitted session is resumed with a delta brief carrying the write rule (one tool call per response; at most 120 lines per write), and the write rule is added to all future briefs. The orchestrator does not write the file itself.",
+      "files": [],
+      "expectations": [
+        "Identifies the output cap (a whole file drafted in one response) as the cause of the empty diff despite exit 0.",
+        "Does not treat rc 0 as success when the diff is empty.",
+        "Resumes the same emitted session with a delta brief carrying the write rule.",
+        "Adds the write rule to future briefs.",
+        "Does not write the file itself."
       ]
     }
   ]
