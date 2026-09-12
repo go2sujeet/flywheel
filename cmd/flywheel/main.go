@@ -9,7 +9,7 @@ import (
 	"flywheel/internal/flywheel"
 )
 
-const version = "v0.1.0-dev"
+var version = "dev" // release builds set it with -ldflags "-X main.version=<tag>"
 
 func main() {
 	if len(os.Args) < 2 {
