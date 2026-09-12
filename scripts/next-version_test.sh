@@ -44,13 +44,16 @@ expect() {
 		echo "PASS $name"
 	else
 		echo "FAIL $name: expected [$expected] got [$got]"
+		if [ -s "$ROOT/next-version.stderr" ]; then
+			sed 's/^/    /' "$ROOT/next-version.stderr"
+		fi
 		fail=1
 	fi
 }
 
 run_script() {
 	local repo="$1"
-	(cd "$repo" && "$NEXT_VERSION" 2>/dev/null)
+	(cd "$repo" && bash "$NEXT_VERSION" 2>"$ROOT/next-version.stderr")
 }
 
 repo="$(new_repo a)"
