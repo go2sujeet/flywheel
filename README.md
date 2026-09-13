@@ -109,6 +109,18 @@ git still works.*
 
 ![a worker cannot rewrite the shared tree](docs/assets/demo-deny-policy.svg)
 
+*The gauges measure the tree; inspect refuses to pass a unit that has no supervisor readings on record.*
+
+![the gauges measure; the inspector cannot pass without readings](docs/assets/demo-gauges.svg)
+
+*Real output: the factory floor at a fixed instant, showing landed, running, finished-awaiting-inspection, capped and planned units.*
+
+![flywheel factory: the floor at a glance](docs/assets/demo-factory.svg)
+
+### Measure, don't trust
+
+`flywheel validate` runs a task's gates and checks its `owns` boundary, recording supervisor readings; `flywheel inspect` only passes a unit whose readings are on record (and refuses a worker session's verdict); `flywheel verify` checks every poka-yoke rule. `validate` exits 5 when a gate fails or a change sits outside `owns`, and an `inspect` refusal exits 6.
+
 ## Quickstart
 
 1. **Get the CLI.** Download **flywheel-v0.2.0-\<os\>-\<arch\>.zip** from the

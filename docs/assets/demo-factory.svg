@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="872" height="512" viewBox="0 0 872 512" role="img" aria-label="flywheel factory: the floor at a glance">
+  <rect x="0" y="0" width="872" height="512" rx="12" fill="#0d1117"/>
+  <rect x="0" y="0" width="872" height="36" fill="#0d1117"/>
+  <circle cx="26" cy="18" r="6" fill="#ff5f57"/>
+  <circle cx="48" cy="18" r="6" fill="#febc2e"/>
+  <circle cx="70" cy="18" r="6" fill="#28c840"/>
+  <text x="436" y="22" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" fill="#8b949e">flywheel factory: the floor at a glance</text>
+  <text x="20" y="69" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <rect x="17" y="52" width="543.6" height="14" rx="3" fill="#161b22"/>
+    <tspan xml:space="preserve" fill="#3fb950">$ </tspan><tspan xml:space="preserve">flywheel factory --once --width 100 --now 2026-09-12T00:30:00Z</tspan>
+  </text>
+  <text x="20" y="89" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">flywheel factory</tspan>
+  </text>
+  <text x="20" y="109" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">repo  .</tspan>
+  </text>
+  <text x="20" y="129" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">refreshed 00:30:00 UTC</tspan>
+  </text>
+  <text x="20" y="149" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve"></tspan>
+  </text>
+  <text x="20" y="169" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">floor</tspan>
+  </text>
+  <text x="20" y="189" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  default       opencode  openrouter/deepseek/deepseek-v4-flash-0731  max 4  busy 1</tspan>
+  </text>
+  <text x="20" y="209" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  lead  not registered</tspan>
+  </text>
+  <text x="20" y="229" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve"></tspan>
+  </text>
+  <text x="20" y="249" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">units (5)</tspan>
+  </text>
+  <text x="20" y="269" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  TASK               STAGE     ATT  SESSION      MODEL                    STEPS   AGE RUN          </tspan>
+  </text>
+  <text x="20" y="289" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  capped             building  r1   w-capped     openrouter/deepseek/dee~    1  1800 capped       </tspan>
+  </text>
+  <text x="20" y="309" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  running            building  r1   w-running    openrouter/deepseek/dee~    1  1800 running      </tspan>
+  </text>
+  <text x="20" y="329" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  finished           finished  c1   w-finished-~ openrouter/deepseek/dee~    1  1795 done         </tspan>
+  </text>
+  <text x="20" y="349" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  landed             landed    r1   w-landed     openrouter/deepseek/dee~    1  1798 done         </tspan>
+  </text>
+  <text x="20" y="369" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  planned            planned                                                 0  1800 waiting      </tspan>
+  </text>
+  <text x="20" y="389" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve"></tspan>
+  </text>
+  <text x="20" y="409" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">andon (1)</tspan>
+  </text>
+  <text x="20" y="429" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  capped          capped         1800s</tspan>
+  </text>
+  <text x="20" y="449" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve"></tspan>
+  </text>
+  <text x="20" y="469" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">output</tspan>
+  </text>
+  <text x="20" y="489" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  landed today 1  finished 2  first-pass 50%  rework 0.25  tokens 36500  cost $0.0031</tspan>
+  </text>
+</svg>
