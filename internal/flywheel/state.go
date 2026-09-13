@@ -41,17 +41,21 @@ type TaskState struct {
 }
 
 // kindRank orders same-instant events so the status machine replays in the
-// intended order: planned < amended < dispatched < started < finished <
-// reviewed < blocked < landed.
+// intended order: planned < amended < dispatched < started < worker_plan <
+// finished < report < reviewed < blocked < landed. worker_plan and report
+// carry no status; the ranks keep a same-timestamp dispatched, started,
+// worker_plan, report, finished sequence deriving finished.
 var kindRank = map[string]int{
-	"planned":    0,
-	"amended":    1,
-	"dispatched": 2,
-	"started":    3,
-	"finished":   4,
-	"reviewed":   5,
-	"blocked":    6,
-	"landed":     7,
+	"planned":     0,
+	"amended":     1,
+	"dispatched":  2,
+	"started":     3,
+	"worker_plan": 4,
+	"finished":    5,
+	"report":      6,
+	"reviewed":    7,
+	"blocked":     8,
+	"landed":      9,
 }
 
 // eventSortKey is the precomputed comparison key for one event, so sorting

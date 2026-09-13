@@ -1,0 +1,240 @@
+package flywheel
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// fixtureLines returns the newline-delimited lines of a testdata fixture.
+// Tests run with the package directory as the working directory.
+func fixtureLines(name string, t *testing.T) []string {
+	b, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", name, err)
+	}
+	lines := strings.Split(string(b), "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+// fixturePath returns the absolute path of a testdata fixture.
+func fixturePath(name string, t *testing.T) string {
+	p, err := filepath.Abs(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatalf("resolve fixture %s: %v", name, err)
+	}
+	return p
+}
+
+// parseAll decodes every line of a fixture, skipping unknown types.
+func parseAll(adap Adapter, lines []string) []Observation {
+	var out []Observation
+	for _, ln := range lines {
+		if obs, ok := adap.Parse([]byte(ln)); ok {
+			out = append(out, obs)
+		}
+	}
+	return out
+}
+
+func TestAdapterFor(t *testing.T) {
+	a, err := AdapterFor("opencode")
+	if err != nil || a.Name() != "opencode" {
+		t.Errorf("AdapterFor(opencode) = %v, %v", a, err)
+	}
+	a, err = AdapterFor("sim")
+	if err != nil || a.Name() != "sim" {
+		t.Errorf("AdapterFor(sim) = %v, %v", a, err)
+	}
+	if _, err := AdapterFor("bogus"); err == nil {
+		t.Error("AdapterFor(bogus) = nil error, want an error")
+	}
+}
+
+func TestOpenCodeCommandFresh(t *testing.T) {
+	a, _ := AdapterFor("opencode")
+	bin, args := a.Command(RunRequest{
+		Task: "T1", Attempt: "r1", Title: "T1-r1", Model: "m1",
+		PromptFile: "D:/w/brief.txt",
+	})
+	if bin != "opencode" {
+		t.Errorf("bin = %q, want opencode", bin)
+	}
+	want := []string{"run", "--pure", "-m", "m1", "--auto", "--format", "json", "--title", "T1-r1", freshMessage, "--file", "D:/w/brief.txt"}
+	if len(args) != len(want) {
+		t.Errorf("args = %v, want %v", args, want)
+	} else {
+		for i := 0; i < len(want); i++ {
+			if args[i] != want[i] {
+				t.Errorf("args[%d] = %q, want %q", i, args[i], want[i])
+			}
+		}
+	}
+}
+
+func TestOpenCodeCommandResume(t *testing.T) {
+	a, _ := AdapterFor("opencode")
+	bin, args := a.Command(RunRequest{
+		Task: "T1", Attempt: "c1", Title: "T1-c1", Model: "m1", Variant: "v2",
+		Session: "ses_emitted_9", PromptFile: "D:/w/delta.txt", Resume: true,
+	})
+	if bin != "opencode" {
+		t.Errorf("bin = %q, want opencode", bin)
+	}
+	want := []string{"run", "--pure", "-m", "m1", "--variant", "v2", "--auto", "--format", "json", "--title", "T1-c1", "--session", "ses_emitted_9", resumeMessage, "--file", "D:/w/delta.txt"}
+	if len(args) != len(want) {
+		t.Errorf("args = %v, want %v", args, want)
+	} else {
+		for i := 0; i < len(want); i++ {
+			if args[i] != want[i] {
+				t.Errorf("args[%d] = %q, want %q", i, args[i], want[i])
+			}
+		}
+	}
+}
+
+func TestOpenCodeCommandNeverPassesBriefText(t *testing.T) {
+	a, _ := AdapterFor("opencode")
+	brief := "owns: hello.txt (new)\n& echo pwned | more\n"
+	cases := []struct {
+		name string
+		req  RunRequest
+	}{
+		{"fresh", RunRequest{Task: "T1", Attempt: "r1", Title: "T1-r1", Model: "m1", PromptFile: "D:/w/brief.txt"}},
+		{"resume", RunRequest{Task: "T1", Attempt: "c1", Title: "T1-c1", Model: "m1", Session: "s1", PromptFile: "D:/w/delta.txt", Resume: true}},
+	}
+	for _, tc := range cases {
+		_, args := a.Command(tc.req)
+		for i, arg := range args {
+			if strings.Contains(arg, "\n") || strings.Contains(arg, "&") || strings.Contains(arg, "|") {
+				t.Errorf("%s: argument %d contains a newline or a shell metacharacter: %q", tc.name, i, arg)
+			}
+			if strings.Contains(arg, brief) {
+				t.Errorf("%s: argument %d contains the brief text", tc.name, i)
+			}
+		}
+		fileIdx := -1
+		for i, arg := range args {
+			if arg == "--file" {
+				fileIdx = i
+			}
+		}
+		if fileIdx < 1 || (args[fileIdx-1] != freshMessage && args[fileIdx-1] != resumeMessage) {
+			t.Errorf("%s: --file not immediately preceded by the message constant: args = %v", tc.name, args)
+		}
+		if fileIdx != len(args)-2 {
+			t.Errorf("%s: --file is not the final pair: args = %v", tc.name, args)
+		}
+		if filepath.IsAbs(args[fileIdx+1]) == false {
+			t.Errorf("%s: --file path %q is not absolute", tc.name, args[fileIdx+1])
+		}
+	}
+}
+
+func TestOpenCodeParseCleanFixture(t *testing.T) {
+	a, _ := AdapterFor("opencode")
+	obs := parseAll(a, fixtureLines("clean.jsonl", t))
+	if len(obs) != 6 {
+		t.Fatalf("clean.jsonl parsed to %d observations, want 6", len(obs))
+	}
+	if obs[0].Kind != "start" || obs[0].Session != "ses_test_clean_001" {
+		t.Errorf("obs[0] = %v, want start with the session", obs[0])
+	}
+	if obs[1].Kind != "text" || !strings.HasPrefix(obs[1].Text, "PLAN ") {
+		t.Errorf("obs[1] = %v, want a PLAN text", obs[1])
+	}
+	if obs[2].Kind != "tool" || obs[2].Tool != "read" || obs[2].Path != "cmd/flywheel/main.go" {
+		t.Errorf("obs[2] = %v, want tool read with the file path", obs[2])
+	}
+	if obs[3].Kind != "step" || obs[3].Reason != "stop" {
+		t.Errorf("obs[3] = %v, want step stop", obs[3])
+	}
+	if obs[3].Tokens == nil || obs[3].Tokens.Input != 120 || obs[3].Tokens.Output != 40 ||
+		obs[3].Tokens.Reasoning != 10 || obs[3].Tokens.CacheRead != 800 || obs[3].Tokens.CacheWrite != 5 {
+		t.Errorf("obs[3] tokens = %v, want the recorded step tokens", obs[3].Tokens)
+	}
+	if obs[3].Cost != 0.003 {
+		t.Errorf("obs[3] cost = %v, want 0.003", obs[3].Cost)
+	}
+	if obs[4].Kind != "text" || !strings.Contains(obs[4].Text, "Implemented") {
+		t.Errorf("obs[4] = %v, want the final report text", obs[4])
+	}
+	if obs[5].Kind != "step" || obs[5].Reason != "stop" {
+		t.Errorf("obs[5] = %v, want the last step stop", obs[5])
+	}
+	for _, o := range obs {
+		if o.Session != "ses_test_clean_001" {
+			t.Errorf("observation session = %q, want ses_test_clean_001", o.Session)
+		}
+	}
+}
+
+func TestOpenCodeParseCappedFixture(t *testing.T) {
+	a, _ := AdapterFor("opencode")
+	obs := parseAll(a, fixtureLines("capped.jsonl", t))
+	if len(obs) != 5 {
+		t.Fatalf("capped.jsonl parsed to %d observations, want 5", len(obs))
+	}
+	if obs[len(obs)-1].Kind != "step" || obs[len(obs)-1].Reason != "length" {
+		t.Errorf("last observation = %v, want step length", obs[len(obs)-1])
+	}
+	if obs[len(obs)-1].Tokens == nil || obs[len(obs)-1].Tokens.CacheRead != 0 {
+		t.Errorf("last tokens = %v, want cache read 0", obs[len(obs)-1].Tokens)
+	}
+}
+
+func TestOpenCodeParseProviderErrorFixture(t *testing.T) {
+	a, _ := AdapterFor("opencode")
+	obs := parseAll(a, fixtureLines("provider-error.jsonl", t))
+	if len(obs) != 4 {
+		t.Fatalf("provider-error.jsonl parsed to %d observations, want 4", len(obs))
+	}
+	if obs[2].Kind != "error" || !strings.Contains(obs[2].Error, "HTTP 402") {
+		t.Errorf("obs[2] = %v, want the provider error message", obs[2])
+	}
+}
+
+func TestOpenCodeParseUnknownTypesReturnFalse(t *testing.T) {
+	a, _ := AdapterFor("opencode")
+	if _, ok := a.Parse([]byte(`{"type":"bogus","sessionID":"s"}`)); ok {
+		t.Error("Parse() accepted an unknown type")
+	}
+	if _, ok := a.Parse([]byte("not json")); ok {
+		t.Error("Parse() accepted a non-JSON line")
+	}
+}
+
+func TestOpenCodeParseStepWithoutTokens(t *testing.T) {
+	a, _ := AdapterFor("opencode")
+	line := []byte(`{"type":"step_finish","sessionID":"s","part":{"type":"step_finish","reason":"stop"}}`)
+	obs, ok := a.Parse(line)
+	if !ok {
+		t.Fatal("Parse() rejected a step_finish without tokens")
+	}
+	if obs.Kind != "step" || obs.Reason != "stop" {
+		t.Errorf("obs = %v, want step stop", obs)
+	}
+	if obs.Tokens != nil {
+		t.Errorf("tokens = %v, want nil when absent", obs.Tokens)
+	}
+}
+
+func TestSimAdapter(t *testing.T) {
+	a, _ := AdapterFor("sim")
+	if a.Name() != "sim" {
+		t.Errorf("sim Name() = %q", a.Name())
+	}
+	bin, args := a.Command(RunRequest{Model: "fixture.jsonl"})
+	if bin != "" || len(args) != 0 {
+		t.Errorf("sim Command() = %q, %v, want empty bin and no args", bin, args)
+	}
+	line := []byte(`{"type":"text","sessionID":"ses_x","part":{"type":"text","text":"PLAN hello"}}`)
+	obs, ok := a.Parse(line)
+	if !ok || obs.Kind != "text" || !strings.HasPrefix(obs.Text, "PLAN ") {
+		t.Errorf("sim Parse() = %v, %v, want the opencode text observation", obs, ok)
+	}
+}

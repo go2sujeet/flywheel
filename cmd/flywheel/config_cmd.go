@@ -11,6 +11,10 @@ import (
 	"flywheel/internal/flywheel"
 )
 
+func init() {
+	register("config", "read and validate the flywheel config", runConfig)
+}
+
 func runConfig(args []string) {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "flywheel config: missing subcommand (get, show, validate)")

@@ -1,0 +1,4 @@
+{"type":"step_start","sessionID":"ses_test_err_003","part":{"type":"step_start","step":1,"startTime":"2026-09-12T00:00:00Z"},"time":{"startedAt":"2026-09-12T00:00:00Z"}}
+{"type":"text","sessionID":"ses_test_err_003","part":{"type":"text","text":"PLAN attempt the change, watch for provider errors."}}
+{"type":"error","sessionID":"ses_test_err_003","error":{"data":{"message":"HTTP 402: can only afford 900 tokens"}}}
+{"type":"text","sessionID":"ses_test_err_003","part":{"type":"text","text":"Provider refused the request; the run stopped here."}}
