@@ -1,3 +1,4 @@
 .DS_Store
 .flywheel/
 .omo/
+!internal/flywheel/testdata/**/.flywheel/

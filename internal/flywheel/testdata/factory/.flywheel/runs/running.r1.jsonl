@@ -1,0 +1,2 @@
+{"type":"step_start","sessionID":"ses_running_0000000001","part":{"type":"step_start","step":1,"startTime":"2026-09-12T00:00:00Z"},"time":{"startedAt":"2026-09-12T00:00:00Z"}}
+{"type":"step_finish","sessionID":"ses_running_0000000001","part":{"type":"step_finish","reason":"stop","tokens":{"input":50,"output":10,"reasoning":2,"cache":{"read":100,"write":0}},"cost":0.001}}

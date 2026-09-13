@@ -1,0 +1,249 @@
+package flywheel
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+)
+
+// Column widths for the units table. They total 80 with the single-space
+// separators, so the table fits the minimum render width and every wider
+// terminal draws the same columns; overlong cells are truncated, never pushed
+// off the line.
+const (
+	taskW    = 12
+	stageW   = 9
+	attW     = 4
+	sessW    = 12
+	modelW   = 10
+	stepsW   = 4
+	ageW     = 5
+	runW     = 13
+	floorW   = 12
+	adapterW = 8
+	modelL   = 40
+	andonW   = 14
+)
+
+// ANSI colour codes. They are only emitted when colour is enabled (colour=true
+// in RenderText); otherwise cells carry no escape sequences.
+const (
+	ansiGreen  = "\x1b[32m"
+	ansiYellow = "\x1b[33m"
+	ansiRed    = "\x1b[31m"
+	ansiReset  = "\x1b[0m"
+)
+
+// tableWidths expands the fixed 80-column layout by giving the extra
+// (width-80) columns to MODEL (two thirds) and TASK (one third). modelLine is
+// the floor line's model width, grown by the same extra share from modelL.
+func tableWidths(width int) (task, model, modelLine int) {
+	extra := width - 80
+	if extra < 0 {
+		extra = 0
+	}
+	taskGrow := extra / 3
+	modelGrow := extra - taskGrow
+	return taskW + taskGrow, modelW + modelGrow, modelL + modelGrow
+}
+
+// RenderText draws the floor as a text dashboard to w. Columns are truncated
+// to fit the width (the CLI uses 100 by default and 80 as a floor); colour is
+// applied only when color is true.
+func RenderText(w io.Writer, f Floor, width int, color bool) {
+	if width < 80 {
+		width = 80
+	}
+	taskWd, modelWd, modelLineWd := tableWidths(width)
+	renderHeader(w, f, width)
+	renderFloor(w, f, modelLineWd)
+	renderUnits(w, f, taskWd, modelWd, color)
+	renderAndon(w, f, color)
+	renderOutput(w, f)
+}
+
+// renderHeader prints the title, the watched repo and the refresh clock. The
+// repo path is truncated so the header never exceeds the render width.
+func renderHeader(w io.Writer, f Floor, width int) {
+	fmt.Fprintf(w, "flywheel factory\n")
+	fmt.Fprintf(w, "repo  %s\n", truncate(f.Dir, width-8))
+	h, m, s := f.Refreshed.UTC().Clock()
+	fmt.Fprintf(w, "refreshed %02d:%02d:%02d UTC\n", h, m, s)
+}
+
+// renderFloor prints the stations (one per config worker) and the staffing.
+func renderFloor(w io.Writer, f Floor, modelLine int) {
+	fmt.Fprintf(w, "\nfloor\n")
+	for _, l := range f.Lines {
+		fmt.Fprintf(w, "  %-*s  %-*s  %s  max %d  busy %d\n",
+			floorW, truncate(l.Name, floorW),
+			adapterW, truncate(l.Adapter, adapterW),
+			truncate(l.Model, modelLine), l.MaxParallel, l.Busy)
+	}
+	fmt.Fprintf(w, "  lead  %s\n", f.Staffing.Lead)
+}
+
+// truncate cuts s to at most n runes, marking overflow with a trailing "~".
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	if n <= 1 {
+		return s[:1]
+	}
+	return s[:n-1] + "~"
+}
+
+// padLeft left-justifies s in a field of n runes.
+func padLeft(s string, n int) string {
+	if len(s) >= n {
+		return s
+	}
+	return s + strings.Repeat(" ", n-len(s))
+}
+
+// stateColor returns the ANSI colour for a run state, or "" for none.
+func stateColor(state string) string {
+	switch state {
+	case "done", "landed":
+		return ansiGreen
+	case "exploring", "long-step":
+		return ansiYellow
+	case "stalled", "capped", "provider-error":
+		return ansiRed
+	}
+	return ""
+}
+
+// paint wraps s in colour when enabled and a colour applies, else returns s.
+func paint(color bool, code, s string) string {
+	if !color || code == "" {
+		return s
+	}
+	return code + s + ansiReset
+}
+
+// renderUnits prints the units table: one row per task, in-flight first, then
+// by last update, as sorted by the watcher. Numeric columns are right-aligned
+// and every cell is truncated to its column width.
+func renderUnits(w io.Writer, f Floor, taskWd, modelWd int, color bool) {
+	fmt.Fprintf(w, "\nunits (%d)\n", len(f.Units))
+	fmt.Fprintf(w, "  %-*s %-*s %-*s %-*s %-*s %*s %*s %-*s\n",
+		taskWd, "TASK", stageW, "STAGE", attW, "ATT", sessW, "SESSION",
+		modelWd, "MODEL", stepsW, "STEPS", ageW, "AGE", runW, "RUN")
+	for _, u := range f.Units {
+		run := truncate(u.RunState, runW)
+		run = padLeft(run, runW)
+		run = paint(color, stateColor(u.RunState), run)
+		fmt.Fprintf(w, "  %-*s %-*s %-*s %-*s %-*s %*s %*s %s\n",
+			taskWd, truncate(u.Task, taskWd),
+			stageW, truncate(u.Stage, stageW),
+			attW, truncate(u.Attempt, attW),
+			sessW, truncate(u.Session, sessW),
+			modelWd, truncate(u.Model, modelWd),
+			stepsW, fmt.Sprintf("%d", u.Steps),
+			ageW, fmt.Sprintf("%d", u.LastAge),
+			run)
+	}
+}
+
+// renderAndon prints the stopped-line conditions, newest first.
+func renderAndon(w io.Writer, f Floor, color bool) {
+	fmt.Fprintf(w, "\nandon (%d)\n", len(f.Andon))
+	for _, a := range f.Andon {
+		st := paint(color, stateColor(a.State), padLeft(a.State, runW))
+		fmt.Fprintf(w, "  %-*s  %s  %ds\n", andonW, truncate(a.Task, andonW), st, a.Age)
+	}
+}
+
+// renderOutput prints the production summary.
+func renderOutput(w io.Writer, f Floor) {
+	rate := "n/a"
+	if f.Output.HasReviews {
+		rate = fmt.Sprintf("%d%%", int(f.Output.FirstPassRate*100))
+	}
+	fmt.Fprintf(w, "\noutput\n")
+	fmt.Fprintf(w, "  landed today %d  finished %d  first-pass %s  rework %.2f  tokens %d  cost $%.4f\n",
+		f.Output.LandedToday, f.Output.Finished, rate,
+		f.Output.Rework, f.Output.Tokens, f.Output.Cost)
+}
+
+// jLine, jStaff, jUnit, jAndon, jOutput and jFloor are the JSON mirror of the
+// view model, tagged so json.MarshalIndent emits stable key order.
+type jLine struct {
+	Name        string `json:"name"`
+	Adapter     string `json:"adapter"`
+	Model       string `json:"model"`
+	MaxParallel int    `json:"max_parallel"`
+	Busy        int    `json:"busy"`
+}
+
+type jStaff struct {
+	Lead string `json:"lead"`
+}
+
+type jUnit struct {
+	Task     string `json:"task"`
+	Stage    string `json:"stage"`
+	Attempt  string `json:"attempt"`
+	Session  string `json:"session"`
+	Model    string `json:"model"`
+	Steps    int    `json:"steps"`
+	LastAge  int    `json:"last_age"`
+	RunState string `json:"run_state"`
+}
+
+type jAndon struct {
+	Task  string `json:"task"`
+	State string `json:"state"`
+	Age   int    `json:"age"`
+}
+
+type jOutput struct {
+	LandedToday   int     `json:"landed_today"`
+	Finished      int     `json:"finished"`
+	FirstPassRate float64 `json:"first_pass_rate"`
+	HasReviews    bool    `json:"has_reviews"`
+	Rework        float64 `json:"rework"`
+	Tokens        int     `json:"tokens"`
+	Cost          float64 `json:"cost"`
+}
+
+type jFloor struct {
+	Dir       string   `json:"dir"`
+	Refreshed string   `json:"refreshed"`
+	Lines     []jLine  `json:"lines"`
+	Staffing  jStaff   `json:"staffing"`
+	Units     []jUnit  `json:"units"`
+	Andon     []jAndon `json:"andon"`
+	Output    jOutput  `json:"output"`
+}
+
+// RenderJSON writes the floor as indented JSON with stable field order. On a
+// marshalling error it writes nothing.
+func RenderJSON(w io.Writer, f Floor) {
+	var j jFloor
+	j.Dir = f.Dir
+	j.Refreshed = f.Refreshed.UTC().Format(time.RFC3339Nano)
+	for _, l := range f.Lines {
+		j.Lines = append(j.Lines, jLine{Name: l.Name, Adapter: l.Adapter, Model: l.Model, MaxParallel: l.MaxParallel, Busy: l.Busy})
+	}
+	j.Staffing = jStaff{Lead: f.Staffing.Lead}
+	for _, u := range f.Units {
+		j.Units = append(j.Units, jUnit{Task: u.Task, Stage: u.Stage, Attempt: u.Attempt, Session: u.Session, Model: u.Model, Steps: u.Steps, LastAge: u.LastAge, RunState: u.RunState})
+	}
+	for _, a := range f.Andon {
+		j.Andon = append(j.Andon, jAndon{Task: a.Task, State: a.State, Age: a.Age})
+	}
+	j.Output = jOutput{LandedToday: f.Output.LandedToday, Finished: f.Output.Finished, FirstPassRate: f.Output.FirstPassRate, HasReviews: f.Output.HasReviews, Rework: f.Output.Rework, Tokens: f.Output.Tokens, Cost: f.Output.Cost}
+	b, err := json.MarshalIndent(j, "", "  ")
+	if err != nil {
+		return
+	}
+	b = append(b, '\n')
+	if _, err := w.Write(b); err != nil {
+		return
+	}
+}

@@ -1,0 +1,2 @@
+{"type":"step_start","sessionID":"ses_capped_00000000001","part":{"type":"step_start","step":1,"startTime":"2026-09-12T00:00:00Z"},"time":{"startedAt":"2026-09-12T00:00:00Z"}}
+{"type":"step_finish","sessionID":"ses_capped_00000000001","part":{"type":"step_finish","reason":"length","tokens":{"input":60,"output":20,"reasoning":5,"cache":{"read":200,"write":10}},"cost":0.002}}
