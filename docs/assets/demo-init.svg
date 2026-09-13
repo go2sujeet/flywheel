@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="309" height="152" viewBox="0 0 309 152" role="img" aria-label="scaffold a project">
+  <rect x="0" y="0" width="309" height="152" rx="12" fill="#0d1117"/>
+  <rect x="0" y="0" width="309" height="36" fill="#0d1117"/>
+  <circle cx="26" cy="18" r="6" fill="#ff5f57"/>
+  <circle cx="48" cy="18" r="6" fill="#febc2e"/>
+  <circle cx="70" cy="18" r="6" fill="#28c840"/>
+  <text x="154.5" y="22" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" fill="#8b949e">scaffold a project</text>
+  <text x="20" y="69" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <rect x="17" y="52" width="157.20000000000002" height="14" rx="3" fill="#161b22"/>
+    <tspan xml:space="preserve" fill="#3fb950">$ </tspan><tspan xml:space="preserve">flywheel version</tspan>
+  </text>
+  <text x="20" y="89" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">flywheel v0.1.2-8-g561a85f-dirty</tspan>
+  </text>
+  <text x="20" y="109" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <rect x="17" y="92" width="224.4" height="14" rx="3" fill="#161b22"/>
+    <tspan xml:space="preserve" fill="#3fb950">$ </tspan><tspan xml:space="preserve">flywheel init --dir demo</tspan>
+  </text>
+  <text x="20" y="129" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">~/demo</tspan>
+  </text>
+</svg>
