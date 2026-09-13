@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -68,6 +69,23 @@ var workerPermissionPolicy = `{
   }
 }`
 
+// NoWorkerSession is the refusal returned by a resume when the task has no
+// recorded worker session. The CLI maps it to exit 2 (usage); every other run
+// error keeps its existing exit code.
+type NoWorkerSession struct {
+	Task string
+}
+
+func (e *NoWorkerSession) Error() string {
+	return fmt.Sprintf("cannot resume task %q: no worker session recorded for it", e.Task)
+}
+
+// IsNoWorkerSession reports whether err is a NoWorkerSession refusal.
+func IsNoWorkerSession(err error) bool {
+	var e *NoWorkerSession
+	return errors.As(err, &e)
+}
+
 // commandHook, when set, receives the dispatch RunRequest before the command
 // is built. It is a test seam only; production code never sets it.
 var commandHook func(RunRequest)
@@ -112,7 +130,7 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 		if e.Kind == "planned" && e.Brief != "" {
 			brief = e.Brief
 		}
-		if e.Session != "" {
+		if e.Session != "" && (e.Kind == "started" || e.Kind == "finished") {
 			lastSession = e.Session
 		}
 	}
@@ -141,7 +159,7 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 	attempt := fmt.Sprintf("r%d", freshN+1)
 	if o.Resume {
 		if lastSession == "" {
-			return Result{}, fmt.Errorf("cannot resume task %q: no session recorded for it", o.Task)
+			return Result{}, &NoWorkerSession{Task: o.Task}
 		}
 		attempt = fmt.Sprintf("c%d", corrN+1)
 	}

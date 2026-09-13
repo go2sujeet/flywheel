@@ -403,3 +403,23 @@ func TestDeriveSkipsEmptyTaskEvents(t *testing.T) {
 		t.Errorf("T1 session/model = %q/%q, want empty (staffed fields leaked into a task)", ts.Session, ts.Model)
 	}
 }
+
+func TestDeriveKeepsWorkerSessionAfterInspected(t *testing.T) {
+	// inspected events carry the inspector's session; they must never
+	// overwrite the task's worker session, so a later resume keeps the
+	// worker's conversation.
+	events := []Event{
+		{TS: "2026-09-13T00:00:00Z", Task: "T1", Kind: "planned"},
+		{TS: "2026-09-13T00:00:01Z", Task: "T1", Kind: "started", Session: "w1"},
+		{TS: "2026-09-13T00:00:02Z", Task: "T1", Kind: "finished", Session: "w1"},
+		{TS: "2026-09-13T00:00:03Z", Task: "T1", Kind: "inspected", Verdict: "rework", Session: "i1"},
+	}
+	st := Derive(events)
+	ts, ok := findTask(st, "T1")
+	if !ok {
+		t.Fatal("T1 missing from derived state")
+	}
+	if ts.Session != "w1" {
+		t.Errorf("T1 session = %q, want w1 (inspector sessions must not overwrite the worker session)", ts.Session)
+	}
+}

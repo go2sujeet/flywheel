@@ -175,7 +175,7 @@ func Derive(events []Event) State {
 			ts.Needs = e.Needs
 			ts.Owns = e.Owns
 		}
-		if e.Session != "" {
+		if e.Session != "" && (e.Kind == "started" || e.Kind == "finished") {
 			ts.Session = e.Session
 		}
 		if e.Model != "" {

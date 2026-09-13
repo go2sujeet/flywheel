@@ -72,6 +72,9 @@ func runRun(args []string) {
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "flywheel run: %v\n", err)
+		if flywheel.IsNoWorkerSession(err) {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 	os.Exit(flywheel.ExitCode(res))

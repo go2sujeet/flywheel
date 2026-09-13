@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -224,8 +225,35 @@ func TestRunResumeWithoutSessionErrors(t *testing.T) {
 	_, err := Run(dir, RunOptions{Task: "T1", Resume: true, Progress: &buf})
 	if err == nil {
 		t.Fatal("Run() resume without a session: got nil error, want refusal")
-	} else if !strings.Contains(err.Error(), "no session") {
-		t.Errorf("Run() error = %v, want 'no session'", err)
+	}
+	if !strings.Contains(err.Error(), "no worker session") {
+		t.Errorf("Run() error = %v, want 'no worker session'", err)
+	}
+	var e *NoWorkerSession
+	if !errors.As(err, &e) {
+		t.Errorf("Run() error = %v, want the NoWorkerSession refusal", err)
+	}
+	if e.Task != "T1" {
+		t.Errorf("refusal task = %q, want T1", e.Task)
+	}
+}
+
+func TestRunResumeWithoutSessionRecordsNoEvents(t *testing.T) {
+	dir := setupTask(t)
+	if err := WriteConfig(dir, simConfig(fixturePath("clean.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	var buf bytes.Buffer
+	_, err := Run(dir, RunOptions{Task: "T1", Resume: true, Progress: &buf})
+	if err == nil {
+		t.Fatal("Run() resume without a session: got nil error, want refusal")
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	if len(evs) != 1 || evs[0].Kind != "planned" {
+		t.Errorf("events = %v, want only the planned event (the refusal must record nothing)", evs)
 	}
 }
 
@@ -440,6 +468,45 @@ func TestRunCommandSessionOnlyOnResume(t *testing.T) {
 	}
 	if got[1].PromptFile != delta {
 		t.Errorf("resume PromptFile = %q, want the delta %q", got[1].PromptFile, delta)
+	}
+}
+
+func TestRunResumeAfterInspectedUsesWorkerSession(t *testing.T) {
+	dir := setupTask(t)
+	if err := WriteConfig(dir, simConfig(fixturePath("clean.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	delta := filepath.Join(dir, ".flywheel", "briefs", "T1.delta.txt")
+	if err := os.MkdirAll(filepath.Dir(delta), 0o755); err != nil {
+		t.Fatalf("mkdir briefs: %v", err)
+	}
+	if err := os.WriteFile(delta, []byte("fix it\n"), 0o644); err != nil {
+		t.Fatalf("write delta: %v", err)
+	}
+	var got []RunRequest
+	commandHook = func(req RunRequest) { got = append(got, req) }
+	defer func() { commandHook = nil }()
+
+	var buf bytes.Buffer
+	if _, err := Run(dir, RunOptions{Task: "T1", Progress: &buf}); err != nil {
+		t.Fatalf("Run() fresh error = %v", err)
+	}
+	// An inspector reworks with its own session; the resume must still pick
+	// up the worker session, never the inspector's.
+	if err := AppendEvent(dir, Event{
+		TS: "2026-09-12T01:00:00Z", Task: "T1", Kind: "inspected",
+		Verdict: "rework", Session: "i1", Persona: "inspector",
+	}); err != nil {
+		t.Fatalf("AppendEvent() inspected error = %v", err)
+	}
+	if _, err := Run(dir, RunOptions{Task: "T1", Resume: true, Progress: &buf}); err != nil {
+		t.Fatalf("Run() resume error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("commandHook captured %d requests, want 2", len(got))
+	}
+	if got[1].Session != "ses_test_clean_001" {
+		t.Errorf("resume session = %q, want the worker session ses_test_clean_001, not the inspector session i1", got[1].Session)
 	}
 }
 
