@@ -160,3 +160,40 @@ func TestVerifyT3FirstPassSurvivesLaterAttempt(t *testing.T) {
 		t.Error("T3 flagged the first inspected pass even though a later finished event exists")
 	}
 }
+
+func TestVerifyAllEmptyLogPasses(t *testing.T) {
+	dir := t.TempDir()
+	res, err := VerifyTasks(dir, VerifyOptions{Dir: dir, All: true})
+	if err != nil {
+		t.Fatalf("VerifyTasks() error = %v", err)
+	}
+	if !res.Passed {
+		t.Error("VerifyTasks(--all) on an empty log did not pass")
+	}
+	if len(res.Items) != 0 {
+		t.Errorf("VerifyTasks(--all) on an empty log = %d items, want 0", len(res.Items))
+	}
+}
+
+func TestVerifyNamedMissingTaskStillRunsRules(t *testing.T) {
+	// An explicitly named task that does not exist must not get the passing
+	// --all empty result: the rules still run, and a task with no planned
+	// brief fails T3 as it did before.
+	dir := t.TempDir()
+	res, err := VerifyTasks(dir, VerifyOptions{Dir: dir, Tasks: []string{"NOPE"}})
+	if err != nil {
+		t.Fatalf("VerifyTasks() error = %v", err)
+	}
+	if res.Passed {
+		t.Error("VerifyTasks() passed a named task absent from the log")
+	}
+	found := false
+	for _, item := range res.Items {
+		if item.Rule == "T3" && !item.Pass {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("VerifyTasks() items = %v, want a failing T3 for the missing task", res.Items)
+	}
+}

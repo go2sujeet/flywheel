@@ -45,6 +45,11 @@ func VerifyTasks(dir string, o VerifyOptions) (VerifyResult, error) {
 		tasks = allTasks(events)
 	}
 	if len(tasks) == 0 {
+		if o.All {
+			// An empty but valid log verifies clean; explicitly named tasks
+			// still run the rules below.
+			return VerifyResult{Passed: true}, nil
+		}
 		return VerifyResult{}, fmt.Errorf("verify: no tasks to check; pass task ids or --all")
 	}
 	res := VerifyResult{Passed: true}

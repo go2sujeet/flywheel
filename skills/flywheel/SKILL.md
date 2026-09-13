@@ -61,6 +61,9 @@ session. A worker never records gauge readings, inspections or audits.
 
 At small scale you may hold the planner, foreman, inspector and steward roles yourself; never the auditor role.
 
+When you start a session, register yourself on the floor:
+`flywheel staff --role lead --session <your session> --model <model>`.
+
 ## Invariants (hold these or don't run)
 
 - **Approved worker only.** The model is set once, here:

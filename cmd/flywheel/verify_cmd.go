@@ -64,6 +64,10 @@ func runVerify(args []string) {
 		}
 		os.Exit(6)
 	}
+	if len(res.Items) == 0 {
+		fmt.Println("nothing to verify")
+		os.Exit(0)
+	}
 	for _, item := range res.Items {
 		status := "PASS"
 		if !item.Pass {

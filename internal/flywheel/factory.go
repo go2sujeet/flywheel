@@ -35,10 +35,18 @@ type Line struct {
 	Busy        int
 }
 
-// Staffing reports the recorded factory roles. No staffed events exist yet, so
-// the floor shows the lead as not registered.
+// Staffing reports the recorded factory roles. Lead is the rendered floor
+// line: `<session> (<model>)` from the latest staffed event for the lead
+// role, or "not registered" when no staffed event exists.
 type Staffing struct {
 	Lead string
+}
+
+// staffRole is one registered role holder: the latest staffed event's session
+// and model.
+type staffRole struct {
+	Session string
+	Model   string
 }
 
 // Unit is one dispatched work order: its task, stage, the latest attempt and
@@ -66,8 +74,8 @@ type Andon struct {
 type Output struct {
 	LandedToday   int     // landed events with today's date
 	Finished      int     // units that finished
-	FirstPassRate float64 // reviewed pass on the first review / reviewed
-	HasReviews    bool    // false until a reviewed event exists
+	FirstPassRate float64 // first verdict pass (reviewed pass or inspected pass) / first verdicts
+	HasReviews    bool    // false until a first verdict exists
 	Rework        float64 // correction attempts per unit
 	Tokens        int     // billed tokens across finished events
 	Cost          float64 // cost across finished events
@@ -383,18 +391,27 @@ func buildLines(cfg Config, byModel map[string]int) []Line {
 	return lines
 }
 
-// buildStaffing reports the recorded lead. No staffed event exists yet.
+// buildStaffing reports the recorded lead: the latest staffed event per role
+// (persona holds the role), rendered as `<session> (<model>)` with the
+// parentheses dropped when the model is empty. "not registered" only when no
+// staffed event exists.
 func buildStaffing(events []Event) Staffing {
+	roles := map[string]staffRole{}
 	for _, e := range events {
-		if e.Kind == "staffed" {
-			lead := e.Note
-			if lead == "" {
-				lead = "registered"
-			}
-			return Staffing{Lead: lead}
+		if e.Kind != "staffed" {
+			continue
 		}
+		roles[e.Persona] = staffRole{Session: e.Session, Model: e.Model}
 	}
-	return Staffing{Lead: "not registered"}
+	r, ok := roles["lead"]
+	if !ok {
+		return Staffing{Lead: "not registered"}
+	}
+	line := r.Session
+	if r.Model != "" {
+		line = line + " (" + r.Model + ")"
+	}
+	return Staffing{Lead: line}
 }
 
 // shortSession truncates a long session id for the table.
@@ -441,13 +458,16 @@ func buildAndon(units []Unit) []Andon {
 	return out
 }
 
-// buildOutput aggregates the production summary from finished events.
+// buildOutput aggregates the production summary from finished events. The
+// first-pass rate uses each task's FIRST verdict from either inspected (pass
+// counts as first pass; rework, scrap and escalate do not) or reviewed (pass
+// / correct), whichever came first in the log.
 func buildOutput(events []Event, now time.Time) Output {
 	var o Output
 	o.LandedToday = landedToday(events, now)
 	finished := map[string]bool{}
 	dispatched := map[string]bool{}
-	firstReview := map[string]string{}
+	firstVerdict := map[string]string{}
 	tokens := 0
 	cost := 0.0
 	corrections := 0
@@ -459,9 +479,9 @@ func buildOutput(events []Event, now time.Time) Output {
 			}
 			cost += e.Cost
 		}
-		if e.Kind == "reviewed" {
-			if _, ok := firstReview[e.Task]; !ok {
-				firstReview[e.Task] = e.Verdict
+		if e.Kind == "reviewed" || e.Kind == "inspected" {
+			if _, ok := firstVerdict[e.Task]; !ok {
+				firstVerdict[e.Task] = e.Verdict
 			}
 		}
 		if e.Kind == "dispatched" {
@@ -474,15 +494,15 @@ func buildOutput(events []Event, now time.Time) Output {
 	o.Finished = len(finished)
 	o.Tokens = tokens
 	o.Cost = cost
-	if len(firstReview) > 0 {
+	if len(firstVerdict) > 0 {
 		o.HasReviews = true
 		passes := 0
-		for _, v := range firstReview {
+		for _, v := range firstVerdict {
 			if v == "pass" {
 				passes++
 			}
 		}
-		o.FirstPassRate = float64(passes) / float64(len(firstReview))
+		o.FirstPassRate = float64(passes) / float64(len(firstVerdict))
 	} else {
 		o.HasReviews = false
 		o.FirstPassRate = 0
