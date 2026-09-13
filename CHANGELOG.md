@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/go2sujeet/flywheel/compare/v0.2.0...v0.2.1) (2026-09-13)
+
+
+### Documentation
+
+* lead the README with the factory, add real CLI screenshots ([#75](https://github.com/go2sujeet/flywheel/issues/75)) ([77de297](https://github.com/go2sujeet/flywheel/commit/77de2972809cb954971d5765155b3eeac29b8301))
+
 ## [0.2.0](https://github.com/go2sujeet/flywheel/compare/v0.1.2...v0.2.0) (2026-09-13)
 
 
