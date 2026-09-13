@@ -22,9 +22,9 @@ is [`../flywheel/references/factory.md`](../flywheel/references/factory.md).
 ## You do / You never
 
 You do:
-- Dispatch each ready work order with the canonical command: `OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json opencode run --pure -m "$MODEL"`
-  `--auto --format json --title <id>`, the brief quoted from file, stdin closed, one run file per
-  attempt (`.flywheel/runs/<id>.r1.jsonl`, then `c1`, `c2`, ...). The policy denies
+- Dispatch each ready work order with the canonical command: `OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json opencode run --pure -m "$MODEL" --auto --format json --title <id>-r1`
+  `"Follow the attached brief exactly." --file .flywheel/briefs/<id>.txt`, stdin closed, one run
+  file per attempt (`.flywheel/runs/<id>.r1.jsonl`, then `c1`, `c2`, ...). The policy denies
   tree-rewriting git commands; see worker-brief.md §2 for the ordering and why `deny` holds under
   `--auto`.
 - Capture and record the exit status and the emitted session id for every run.

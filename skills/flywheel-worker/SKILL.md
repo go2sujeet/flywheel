@@ -23,7 +23,8 @@ A brief is a plain-text file with these parts:
 
 - `owns:` — the files you may create or write. Nothing else.
 - `needs:` — task ids that must land before you start (if any).
-- **Write rule** — one tool call per response; at most 120 lines written per tool call.
+- **Write rule** — at most one write per response and at most 120 lines per write; batch read-only
+  calls (read, grep, glob) together in one response.
 - **Goal** — a single verifiable outcome.
 - **Exact change** — what to modify and how; leave no ambiguity.
 - **Don't-touch list** — files with in-flight changes you must never clobber (the orchestrator's
@@ -48,11 +49,13 @@ A brief is a plain-text file with these parts:
    not look for a way around a block, report it.
 3. **Implement, don't plan.** You do not redesign the brief. If the brief is ambiguous, report the
    blocker. Do not silently pick a different scope.
-4. **Write in chunks.** One tool call per response, and at most 120 lines written per tool call.
-   Build a large file across several edits. Drafting a whole file in one response hits the output
-   cap: the run ends and nothing is written.
-5. **State your plan first.** Before step 20, post one short text message with your plan: what
-   you will read and what you will change. Then work.
+4. **Write in chunks.** At most one write per response and at most 120 lines per write; batch
+   read-only calls (read, grep, glob) together in one response. Build a large file across several
+   edits. Drafting a whole file in one response hits the output cap: the run ends and nothing is
+   written.
+5. **State your plan first.** Before step 20, post one short text message with your plan as the
+   four fixed lines: `PLAN files-to-read: ...`, `PLAN files-to-change: ...`, `PLAN order: ...`,
+   `PLAN checks: ...`. Then work.
 6. **Docs tasks: describe the code as it is.** Document what is in the code; flag what is not,
    instead of documenting intended behaviour.
 7. **Run the gates.** Execute the required commands yourself; capture full output and exit status.
@@ -80,7 +83,11 @@ A brief is a plain-text file with these parts:
      from PATH, and report if absent.
 11. **Corrections resume, they don't restart.** If the orchestrator resumes your session with a
     delta brief, treat it as the same task continued: keep prior context, apply only the delta.
-12. **Blocked → report and halt.** Environment broken, tool missing, file on the don't-touch list
+12. **Look up APIs, never library source.** Learn an API with the language's doc tool (`go doc
+    pkg.Symbol`, the package's type definitions) — never by reading or grepping library source,
+    and never write probe programs or scratch files in the repo. Two of five Go workers once spent
+    20-45 steps in library source with zero edits.
+13. **Blocked → report and halt.** Environment broken, tool missing, file on the don't-touch list
     needed — say so plainly and stop. Never take over orchestrator judgment.
 
 ## Example shape
@@ -88,7 +95,7 @@ A brief is a plain-text file with these parts:
 ```
 owns: src/api/client.ts   (the ONLY file you may create or write)
 needs: T011
-Write rule: one tool call per response; <=120 lines per write.
+Write rule: at most one write per response; <=120 lines per write.
 
 Goal: ...
 Exact change: ...

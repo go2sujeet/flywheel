@@ -16,11 +16,13 @@ only what those cannot know. One task per brief. Each brief must state, in plain
 - **Exact change** — what to modify and the intended approach; leave no ambiguity about scope.
 - **Don't-touch list** — every file with uncommitted, in-flight changes the worker could clobber
   (the orchestrator's own work and any other worker's; see §4).
-- **Write rule** — every brief includes, verbatim, "One tool call per response; at most 120 lines
-  written per tool call." A worker that drafts a whole large file in one response hits the model's
-  output cap; the run exits rc 0 with the last `step_finish` reason `length` and nothing written.
-  In the field run all three output-cap failures came from briefs without this rule, and none
-  happened after it was added.
+- **Write rule** — every brief includes, verbatim, "At most one write per response and at most 120
+  lines per write; batch read-only calls (read, grep, glob) together in one response." Output caps
+  come from large writes, never from reads; serialising reads made every read its own round trip
+  (measured: 23 s per step, only 44 % of it in the model). A worker that drafts a whole large file
+  in one response hits the model's output cap; the run exits rc 0 with the last `step_finish`
+  reason `length` and nothing written. In the field run all three output-cap failures came from
+  briefs without this rule, and none happened after it was added.
 - **Task-specific tests** — tests only this task can define, beyond what the repo's documented
   gates already cover.
 - **Report contract** — what to return: files changed, tests run, exact output of those tests,
@@ -38,6 +40,11 @@ only what those cannot know. One task per brief. Each brief must state, in plain
 - **Docs tasks** — "document what is in the code; flag what is not". A docs worker told to
   document a parallel task caught a code/doc mismatch this way; the docs task becomes a cheap
   second reviewer.
+- **Build after each file written** — run a build (or typecheck) after every file you write so a
+  broken intermediate state surfaces immediately; run the full tests and the formatter once, at
+  the end (each is a slow tool call).
+- **Library APIs** — for a task that needs specific library APIs, list them in the brief; the
+  worker looks those up with the language's doc tool, never by reading or grepping library source.
 
 Large scope per brief is fine; large single writes are not.
 
@@ -48,7 +55,10 @@ repo doc said only `clippy`, but plain `cargo clippy` misses lints in test code 
 `cargo clippy --all-targets`.
 
 Keep it bounded: a bug fix, a single feature slice, one migration. If a request is bigger than one
-brief, split it and run the pieces as separate, ordered tasks.
+brief, split it and run the pieces as separate, ordered tasks. For a large task, deliver it as
+**increments** — one delta per increment — each increment ending with its checks, a short report
+and STOP. Evidence: a worker's first edit moved from step 56 to step 2 once the task was split,
+and each increment's first edit came within three steps.
 
 ## 2. Dispatch: verify, then use the safe quoted file brief
 
@@ -58,18 +68,23 @@ Never trust flag names from memory. Before relying on `opencode run` options, ru
 opencode run --help
 ```
 
-A **fresh run** must label the task with `--title` (human-readable), auto-approve permissions with
-`--auto`, and emit `--format json` so the session id comes back in the output. Every dispatch —
-fresh and resume — sets `OPENCODE_CONFIG` to the worker permission policy, which denies the
-tree-rewriting git commands (§9), then dispatches with the brief quoted into a single argument —
-quoting the `$(cat ...)` substitution prevents word-splitting and glob expansion and keeps the
-brief out of your editing surface:
+A **fresh run** must label the task with `--title "<id>-r1"` (human-readable), auto-approve
+permissions with `--auto`, and emit `--format json` so the session id comes back in the output.
+Every dispatch — fresh and resume — sets `OPENCODE_CONFIG` to the worker permission policy, which
+denies the tree-rewriting git commands (§9), then dispatches the brief **as a file**, never on the
+command line: the message first, then the brief attached with `--file`. On Windows the npm
+`opencode.cmd` shim sends arguments through cmd.exe, which cuts a multi-line argument at the first
+newline (a worker once received only the brief's first line) and is a command-injection risk;
+Windows also caps a command line near 32K characters. The message must come BEFORE `--file` (an
+array option that swallows later positionals; even `--file=path` does). Resumes carry `--title`
+too, so a resumed worker can be found by its title; `flywheel run` (#20) does all of this itself
+once it lands:
 
 ```bash
 mkdir -p .flywheel/runs
 OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-  opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
-  "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
+  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-r1" \
+  "Follow the attached brief exactly." --file .flywheel/briefs/<id>.txt < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
 ```
 
 `OPENCODE_CONFIG` loads the worker permission policy
@@ -100,7 +115,8 @@ denies `git -C*`, `git --work-tree*` and `git --git-dir*`.
   and resumed. In another setup the same global plugin did not swap the agent, so the effect depends
   on the plugin and its config; `--pure` removes the variable either way. If a plugin is what
   supplies provider auth, `--pure` drops it: set credentials with `opencode auth login` instead.
-- `--title "<id>"` gives the run a human-readable label — and is the kill handle in §3;
+- `--title "<id>-r1"` gives the fresh run a human-readable label — and is the kill handle in §3;
+  resumes carry `--title "<id>-c<n>"` so a resumed worker is found by its title too;
   `--format json` is what emits the **actual session id** in the output.
 - `< /dev/null` closes stdin and is required on every dispatch and every resume. In a non-TTY shell
   (an agent's shell tool, CI), `opencode run` waits on an open stdin and writes nothing after
@@ -134,6 +150,7 @@ output cap was hit), `part.tokens` `{total, input, output, reasoning, cache: {re
 | silent | no output after 60 s | check, in order: was stdin closed? is there a provider error in the opencode log? Only then treat it as stalled. |
 | running | events arriving | do nothing; let it run. |
 | exploring | distinct files read keeps rising, zero edits, no file read over and over | healthy for large tasks — one run read for 53 steps, about 40 minutes, then made 50 edits steadily. Compare the plan message the brief asked for (see §1) with what it is reading; if off course, stop it by PID and resume with a delta, otherwise leave it. |
+| off-course | reads or greps of paths outside the task's worktree (library source), or probe files written outside `owns:` | unlike `exploring` (relevant files inside the worktree), stop it by PID and resume with a delta that lists the APIs it needs. |
 | long step | events stop for 5-10 min during a large generation | not a stall; do not kill it. |
 | read loop | the same file read again and again, no edits (compare `"tool":"read"` with `"tool":"edit"`/`"tool":"write"` counts in the run file) | stop it by PID, check which agent the opencode log shows for the session (`agent=` on its lines), and re-dispatch with `--pure`. |
 | capped | rc 0 and the last reason is `length` | resume the same session, with the write rule as the delta. |
@@ -311,12 +328,14 @@ brief (only the correction, not a restated task):
 
 ```bash
 OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-  opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
-  "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
+  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-c<n>" --session "<emitted-sessionID>" \
+  "Apply the attached correction to the same task." --file .flywheel/briefs/<id>.delta.txt < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
 ```
 
 Each correction resume writes a new attempt file (`c1`, `c2`, ...) with `>` — never `>>` — so
-per-attempt steps, tokens and finish reasons stay separate (§2).
+per-attempt steps, tokens and finish reasons stay separate (§2). Large tasks are delivered the same
+way, as **increments** — one delta per increment, each ending with its checks, a short report and
+STOP — and the next increment resumes the same session with the next delta.
 
 `--auto` is required here too (same non-interactive permission prompt), and stdin must be closed per
 §2.

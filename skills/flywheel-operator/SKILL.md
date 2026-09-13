@@ -86,8 +86,8 @@ same state files the planned subcommands will automate. `$MODEL` is set once in
    ```bash
    mkdir -p .flywheel/runs
    OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-     opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
-     "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
+     opencode run --pure -m "$MODEL" --auto --format json --title "<id>-r1" \
+     "Follow the attached brief exactly." --file .flywheel/briefs/<id>.txt < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
    ```
    Every dispatch sets `OPENCODE_CONFIG` to the worker permission policy, which denies
    tree-rewriting git commands (ordering and `--auto` behaviour:
@@ -104,8 +104,8 @@ same state files the planned subcommands will automate. `$MODEL` is set once in
    corrections. Pass the session ID by hand; there is no automatic handoff:
    ```bash
    OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-     opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
-     "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
+     opencode run --pure -m "$MODEL" --auto --format json --title "<id>-c<n>" --session "<emitted-sessionID>" \
+     "Apply the attached correction to the same task." --file .flywheel/briefs/<id>.delta.txt < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
    ```
 
 ## Control plane vs data plane
