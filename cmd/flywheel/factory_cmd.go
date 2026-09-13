@@ -32,12 +32,12 @@ func factoryFlags() (*flag.FlagSet, *factoryOptions) {
 	fs := flag.NewFlagSet("factory", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	o := &factoryOptions{}
-	o.dir = *fs.String("dir", ".", "target directory")
-	o.once = *fs.Bool("once", false, "render the floor once and exit")
-	o.asJSON = *fs.Bool("json", false, "print one JSON snapshot and exit")
-	o.interval = *fs.Duration("interval", 2*time.Second, "redraw interval in live mode")
-	o.width = *fs.Int("width", 100, "render width in columns")
-	o.now = *fs.String("now", "", "RFC3339 instant to render at; makes a screenshot reproducible")
+	fs.StringVar(&o.dir, "dir", ".", "target directory")
+	fs.BoolVar(&o.once, "once", false, "render the floor once and exit")
+	fs.BoolVar(&o.asJSON, "json", false, "print one JSON snapshot and exit")
+	fs.DurationVar(&o.interval, "interval", 2*time.Second, "redraw interval in live mode")
+	fs.IntVar(&o.width, "width", 100, "render width in columns")
+	fs.StringVar(&o.now, "now", "", "RFC3339 instant to render at; makes a screenshot reproducible")
 	return fs, o
 }
 
