@@ -94,8 +94,9 @@ At small scale you may hold the planner, foreman, inspector and steward roles yo
 ### 1. Plan & brief
 Decompose the request into bounded, single-purpose tasks. Write each brief to a file (safe quoting,
 no secrets): an `owns:`/`needs:` header, goal, exact change, don't-touch list of uncommitted
-in-flight files, task-specific tests, a report contract, and the write rule — one tool call per
-response; at most 120 lines written per tool call. The worker auto-loads AGENTS.md/CLAUDE.md, so
+in-flight files, task-specific tests, a report contract, and the write rule — at most one write per
+response and at most 120 lines per write; batch read-only calls (read, grep, glob) together in one
+response. The worker auto-loads AGENTS.md/CLAUDE.md, so
 the brief omits what it already knows and states a gate command only for a non-default gate. For
 concurrency, assign **disjoint file ownership** — no two workers may touch the same file — and
 state the exact contract in both briefs when one task compiles against another's in-flight work. A
@@ -117,8 +118,8 @@ policy so the worker cannot rewrite the shared tree (ordering and `--auto` behav
 ```bash
 mkdir -p .flywheel/runs
 OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-  opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
-  "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
+  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-r1" \
+  "Follow the attached brief exactly." --file .flywheel/briefs/<id>.txt < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
 ```
 
 Session id (every JSONL event carries it):
@@ -168,8 +169,8 @@ Never kill opencode processes by name.
 
 ```bash
 OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-  opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
-  "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
+  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-c<n>" --session "<emitted-sessionID>" \
+  "Apply the attached correction to the same task." --file .flywheel/briefs/<id>.delta.txt < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
 ```
 
 - Correct and gate-passing → surface the result; commit **only** if the user asked you to.

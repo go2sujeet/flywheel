@@ -26,8 +26,9 @@ You do:
 - Decompose a goal into ordered, bounded work orders.
 - Write each work order with `owns:`, `needs:`, optional `exclusive:`, goal, exact change,
   don't-touch list, gates, acceptance criteria and the report contract.
-- Put the write rule ("one tool call per response; at most 120 lines written per tool call") and
-  the plan check-in ("state your plan in one text message before step 20") in every work order.
+- Put the write rule ("at most one write per response and at most 120 lines per write; batch
+  read-only calls (read, grep, glob) together in one response") and the plan check-in ("state your
+  plan in one text message before step 20") in every work order.
 - Grant "files that reference it (list them with grep first)" when a work order moves or renames
   a file.
 - Split choke-point files (registration files, route tables, module indexes) so one work order
