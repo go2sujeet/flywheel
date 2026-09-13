@@ -2,9 +2,12 @@ package flywheel
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -530,5 +533,120 @@ func TestInitRollbackRemovesCreatedConfig(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "flywheel.md")); !os.IsNotExist(err) {
 		t.Error("flywheel.md left behind after rollback")
+	}
+}
+
+func TestInitSeedsModelAndVariant(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := InitSeeded(dir, false, "x/y", "max"); err != nil {
+		t.Fatalf("InitSeeded() error = %v", err)
+	}
+	cfg, exists, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if !exists {
+		t.Fatal("InitSeeded() did not write .flywheel/config.json")
+	}
+	w, ok := cfg.Worker("default")
+	if !ok {
+		t.Fatal("seeded config has no default worker")
+	}
+	if w.Model != "x/y" {
+		t.Errorf("seeded model = %q, want x/y", w.Model)
+	}
+	if w.Variant != "max" {
+		t.Errorf("seeded variant = %q, want max", w.Variant)
+	}
+}
+
+func TestInitSeedsVariantOnly(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := InitSeeded(dir, false, "", "max"); err != nil {
+		t.Fatalf("InitSeeded() error = %v", err)
+	}
+	cfg, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	w, ok := cfg.Worker("default")
+	if !ok {
+		t.Fatal("seeded config has no default worker")
+	}
+	if w.Model != DefaultConfig().Workers[0].Model {
+		t.Errorf("variant-only seed changed model: got %q, want %q", w.Model, DefaultConfig().Workers[0].Model)
+	}
+	if w.Variant != "max" {
+		t.Errorf("seeded variant = %q, want max", w.Variant)
+	}
+}
+
+func TestInitSeededKeepsExistingConfig(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	configPath := filepath.Join(dir, ".flywheel", "config.json")
+	custom := []byte(`{"version":1,"workers":[{"name":"sim","adapter":"sim","model":"f.jsonl"}]}`)
+	if err := os.WriteFile(configPath, custom, 0o644); err != nil {
+		t.Fatalf("write config.json: %v", err)
+	}
+
+	if _, err := InitSeeded(dir, true, "x/y", "max"); err != nil {
+		t.Fatalf("InitSeeded() --force error = %v", err)
+	}
+	b, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config.json: %v", err)
+	}
+	if string(b) != string(custom) {
+		t.Error("InitSeeded() --force overwrote the existing config.json")
+	}
+}
+
+// gitInit makes dir a throwaway git repository; no commit is needed because
+// the ignore check reads the work tree.
+func gitInit(t *testing.T, dir string) {
+	t.Helper()
+	cmd := exec.Command("git", "-c", "core.autocrlf=false", "init", "-q")
+	cmd.Dir = dir
+	if _, err := cmd.Output(); err != nil {
+		var e *exec.ExitError
+		if errors.As(err, &e) {
+			t.Fatalf("git init: %v", err)
+		}
+		t.Skipf("git unavailable: %v", err)
+	}
+}
+
+func TestIgnoredStateFilesReportsGitIgnored(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(".flywheel/*\n"), 0o644); err != nil {
+		t.Fatalf("write .gitignore: %v", err)
+	}
+	gitInit(t, dir)
+
+	ignored := IgnoredStateFiles(dir)
+	sort.Strings(ignored)
+	want := []string{".flywheel/config.json", ".flywheel/events.jsonl", ".flywheel/state.json"}
+	if !reflect.DeepEqual(ignored, want) {
+		t.Errorf("IgnoredStateFiles() = %v, want %v", ignored, want)
+	}
+}
+
+func TestIgnoredStateFilesReportsNothingWhenNotIgnored(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+
+	if ignored := IgnoredStateFiles(dir); len(ignored) != 0 {
+		t.Errorf("IgnoredStateFiles() = %v, want none", ignored)
+	}
+}
+
+func TestIgnoredStateFilesReportsNothingOutsideGit(t *testing.T) {
+	dir := t.TempDir()
+
+	if ignored := IgnoredStateFiles(dir); len(ignored) != 0 {
+		t.Errorf("IgnoredStateFiles() = %v, want none", ignored)
 	}
 }
