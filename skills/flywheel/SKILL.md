@@ -108,17 +108,21 @@ found" addendum for what is not there yet, then send a follow-up delta once the 
 ([references/worker-brief.md#4-concurrency-disjoint-file-ownership-preserve-dirty-edits](references/worker-brief.md#4-concurrency-disjoint-file-ownership-preserve-dirty-edits)).
 Template and rules: [references/worker-brief.md](references/worker-brief.md).
 
-### 2. Dispatch (safe quoted file brief)
-Verify the CLI first (`opencode run --help` — confirm flags before relying on them), then a
-**fresh run** labelled with `--title`, auto-approving permissions with `--auto`, and emitted as JSON
-so you can capture the session id. Every dispatch sets `OPENCODE_CONFIG` to the worker permission
-policy so the worker cannot rewrite the shared tree (ordering and `--auto` behaviour:
+### 2. Dispatch (canonical `flywheel run`, raw command as fallback)
+First choice: `flywheel log --task <id> --kind planned --brief <path>`, then `flywheel run <task>`
+(attaches the brief with `--file`, applies the deny policy, records every event). The hand-built
+**fresh run** below is the fallback (e.g. one increment of a brief): verify flags first
+(`opencode run --help`), label with `--title`, auto-approve with `--auto`, emit JSON so you capture
+the session id, and add `--variant low` (the default reasoning variant spends 17-30 k reasoning
+tokens planning one step and caps with nothing written; `--variant low` keeps ~1 k per step). Every
+dispatch sets `OPENCODE_CONFIG` to the worker permission policy so the worker cannot rewrite the
+shared tree (ordering and `--auto` behaviour:
 [references/worker-brief.md §2](references/worker-brief.md#2-dispatch-verify-then-use-the-safe-quoted-file-brief)):
 
 ```bash
 mkdir -p .flywheel/runs
 OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-r1" \
+  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-r1" --variant low \
   "Follow the attached brief exactly." --file .flywheel/briefs/<id>.txt < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
 ```
 
@@ -158,9 +162,17 @@ Never kill opencode processes by name.
   production flag, contract prose that disagrees with its tests, and error paths that send a
   response without returning
   ([references/worker-brief.md#6-review-exit-status--diff-and-independent-validation](references/worker-brief.md#6-review-exit-status--diff-and-independent-validation)).
+- **Gauges (`flywheel validate <task>`):** before an inspect pass, run `flywheel validate <task>`.
+  It runs the brief's `gate:` lines on the exact tree, checks **owns:**, and records a supervisor
+  reading bound to that tree hash — exit 0 means every gate passed and nothing is outside `owns:`,
+  exit 5 means a gate failed or an owned-file violation (recorded in .flywheel/evidence). A passing
+  reading is what vouches for the tree *as it is now*; `flywheel inspect` and `flywheel verify`
+  refuse without one. Never pass on the worker's claim alone — run the gauges and let the reading
+  speak.
 - **Independent validation when needed:** re-run the gates yourself on sensitive or suspicious
-  changes; treat "tests passed" as a claim to be verified, not a fact. You may run validation
-  commands independently — but send any implementation change to the worker.
+  changes; treat "tests passed" as a claim to be verified, not a fact. `flywheel validate <task>`
+  is that re-run and its evidence. You may run validation commands independently — but send any
+  implementation change to the worker.
 
 ### 5. Correct or land
 - Needs changes → send a **correction** to the worker by resuming the **emitted session id** with a
@@ -169,7 +181,7 @@ Never kill opencode processes by name.
 
 ```bash
 OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-c<n>" --session "<emitted-sessionID>" \
+  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-c<n>" --variant low --session "<emitted-sessionID>" \
   "Apply the attached correction to the same task." --file .flywheel/briefs/<id>.delta.txt < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
 ```
 

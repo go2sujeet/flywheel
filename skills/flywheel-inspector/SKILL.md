@@ -50,6 +50,12 @@ and steward's).
 ## Hard rules
 
 - Same-tree rule: verdicts cite only readings bound to the git tree hash the unit ran on.
+- Run `flywheel validate <task>` first: a passing supervisor reading on the tree as it is now must
+  precede an inspect, or `flywheel inspect` refuses (T3). A refusal (exit 6) names the rule and its
+  fix — fix the prerequisite and re-run; never force the verdict to dodge it. T4 means you passed a
+  worker's session as your own — pass your own inspector session id; never a worker's session of the
+  task. T8 means the verdict was not pass/rework/scrap/escalate. Cross-check the chain
+  with `flywheel verify` before landing a pass.
 - Never inspect your own session's work. If you wrote or planned the unit, hand it to another
   inspector or to audit.
 - Independence: you are never the auditor's session; the auditor re-inspects your verdicts.
@@ -63,8 +69,19 @@ and steward's).
 
 ## Commands
 
-- `flywheel verify` — planned (#54); today: independently re-run the unit's gates in its
-  worktree as a check (never as the evidence; the verdict cites the recorded readings).
+- `flywheel validate <task>` — the **gauges**: run first. It re-runs the brief's `gate:` lines on
+  the exact tree and checks `owns:`, recording a supervisor reading bound to the tree hash. Exit 0
+  = pass, 5 = a gate failed or an owned-file violation. `flywheel inspect` refuses (T3) without a
+  passing reading on the tree *as it is now*, so validate before you inspect.
+- `flywheel inspect <task> --verdict pass|rework|scrap|escalate --session <your-session> [--note]` —
+  your verdict, recorded as an inspection event. It refuses (exit 6, poka-yoke) with a rule id
+  (T3/T4/T8) and its fix: T8 a verdict that is not pass/rework/scrap/escalate; T4 a missing
+  `--session` or a session that is a worker session of the task — pass your own inspector session id;
+  never a worker's session of the task; T3 no passing reading / clean owns check on the tree after the latest
+  `finished` event — run `flywheel validate <task>` first, then re-inspect.
+- `flywheel verify [<task>...|--all] [--json]` — cross-checks the event chain (T1/T3/T4/T5/T8;
+  exit 0 or 6). Confirm the unit's readings are present and bound before you land a verdict.
 - `flywheel explain` / `flywheel context` — planned (#58); today: reconstruct the unit from the
   briefs, run files and state.
-- `flywheel status` — planned; today: read `flywheel.md` and `.flywheel/state.json`.
+- `flywheel state` — status: derived task states; `flywheel factory --once` — the floor, units,
+  andon.

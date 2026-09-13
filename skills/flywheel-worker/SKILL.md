@@ -66,7 +66,11 @@ A brief is a plain-text file with these parts:
    gate command with its exact output and exit status, explicit confirmation nothing on the
    don't-touch list was touched, a **Findings outside `owns:`** section — real problems you
    noticed outside your task, reported and not fixed (write "none" if there are none) — and
-   anything uncertain or left undone.
+   anything uncertain or left undone. Your claims are **re-measured**: the orchestrator runs the
+   gauges (`flywheel validate <task>`) on the exact tree — which re-runs your `gate:` lines and
+   checks owns — so report the **exact command** you ran and its **real exit code**, never buried
+   behind a pipe that swallows it. A gate run through `|` (e.g. `go test | tee`) makes `$?` report
+   the pipe's tail; give the bare command and its true status, or the gauges will catch the gap.
 9. **Never commit, never push, never secrets.** Committing is the orchestrator's/user's call; the
    tree-rewriting commands in rule 2 are never yours to run. No credentials, keys, or tokens in
    any output you produce for the brief.

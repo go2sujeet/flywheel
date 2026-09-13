@@ -22,11 +22,13 @@ is [`../flywheel/references/factory.md`](../flywheel/references/factory.md).
 ## You do / You never
 
 You do:
-- Dispatch each ready work order with the canonical command: `OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json opencode run --pure -m "$MODEL" --auto --format json --title <id>-r1`
+- Dispatch each ready work order — canonical: `flywheel log --task <id> --kind planned --brief
+  <path>`, then `flywheel run <task>` (attaches the brief with `--file`, applies the deny policy,
+  records every event). Fallback for one increment of a brief: `OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json opencode run --pure -m "$MODEL" --auto --format json --title <id>-r1 --variant low`
   `"Follow the attached brief exactly." --file .flywheel/briefs/<id>.txt`, stdin closed, one run
-  file per attempt (`.flywheel/runs/<id>.r1.jsonl`, then `c1`, `c2`, ...). The policy denies
-  tree-rewriting git commands; see worker-brief.md §2 for the ordering and why `deny` holds under
-  `--auto`.
+  file per attempt (`.flywheel/runs/<id>.r1.jsonl`, then `c1`, `c2`, ...). `--variant low` keeps
+  large increments from capping with nothing written. The policy denies tree-rewriting git
+  commands; see worker-brief.md §2 for the ordering and why `deny` holds under `--auto`.
 - Capture and record the exit status and the emitted session id for every run.
 - Watch run states — starting, silent, running, exploring, long step, read loop, capped, provider
   error, done — and classify before acting.
@@ -66,7 +68,7 @@ You never record gauge readings, inspections or audits (a worker never records t
 
 ## Commands
 
-- `flywheel run` — planned (#20); today: the canonical `opencode run` command above, by hand.
+- `flywheel run <task>` — implemented; today use `flywheel run <task>`, fallback: the canonical `opencode run` command above, by hand (with `--variant low`).
 - `flywheel supervise` — planned (#55); today: classify run states from the JSONL by hand.
 - `flywheel watch` — planned (#22); today: poll the run file size and the opencode log.
 - `flywheel status` — planned; today: read `flywheel.md` and `.flywheel/state.json`.

@@ -13,6 +13,21 @@ only what those cannot know. One task per brief. Each brief must state, in plain
 - **Goal** — the single outcome, stated as a verifiable result.
 - **owns:** / **needs:** — the files this task may write and the task ids that must land first
   (rules live in §4).
+- **gate:** lines — the header carries one or more `gate:` lines, each a single shell command
+  that `flywheel validate` runs to re-measure the brief's claims on the exact tree as built; a
+  brief without one is refused. The `gate:` lines list **every** gate the gauges must run on the
+  built tree, including the project's default build/lint/test commands — repeat them from
+  AGENTS.md/CLAUDE.md. (The "state only non-default checks" rule below applies to the brief's
+  Checks section for the worker, not to gates.) For Go projects built on one OS, add cross-OS vet
+  gates (`GOOS=linux go vet ./...`, `GOOS=darwin go vet ./...`): files behind a
+  `//go:build !windows` constraint are never compiled on Windows, and a missing import there passed
+  every local gate and failed CI.
+- **Working directory** — the first body line names the absolute path the worker may touch: "Work
+  only in <abs path>". The brief file lives inside that directory (`<workdir>/.flywheel/briefs/`),
+  never in another checkout — a brief attached from a different checkout made a worker edit that
+  other checkout instead.
+- **Named parts** — for a large file, request it in named parts ("file f: part 1 — those ranges,
+  then part 2 — ..."), building after each part, so no single write passes the 120-line budget.
 - **Exact change** — what to modify and the intended approach; leave no ambiguity about scope.
 - **Don't-touch list** — every file with uncommitted, in-flight changes the worker could clobber
   (the orchestrator's own work and any other worker's; see §4).
@@ -48,11 +63,23 @@ only what those cannot know. One task per brief. Each brief must state, in plain
 
 Large scope per brief is fine; large single writes are not.
 
-State a gate command explicitly only when the task needs a **non-default** gate: the worker already
-knows the documented gates from `AGENTS.md`/`CLAUDE.md`, so a brief that restates them is dead weight
-(this cut one brief from 166 to 81 lines with no loss of quality). Example from a real session: the
-repo doc said only `clippy`, but plain `cargo clippy` misses lints in test code — the brief had to say
-`cargo clippy --all-targets`.
+The header of a brief looks like this:
+
+```text
+owns: skills/flywheel/references/worker-brief.md
+needs: none
+gate: go build ./... && go vet ./...
+gate: go test ./...
+
+Work only in /abs/path/to/the/build/tree
+```
+
+State a check command explicitly only when the task needs a **non-default** check: the worker already
+knows the documented build/lint/test from `AGENTS.md`/`CLAUDE.md`, so a brief that restates them is
+dead weight (this cut one brief from 166 to 81 lines with no loss of quality). That "state only
+non-default checks" rule applies to the brief's Checks section, never to `gate:` lines. Example from
+a real session: the repo doc said only `clippy`, but plain `cargo clippy` misses lints in test code —
+the brief had to say `cargo clippy --all-targets`.
 
 Keep it bounded: a bug fix, a single feature slice, one migration. If a request is bigger than one
 brief, split it and run the pieces as separate, ordered tasks. For a large task, deliver it as
@@ -60,9 +87,17 @@ brief, split it and run the pieces as separate, ordered tasks. For a large task,
 and STOP. Evidence: a worker's first edit moved from step 56 to step 2 once the task was split,
 and each increment's first edit came within three steps.
 
-## 2. Dispatch: verify, then use the safe quoted file brief
+## 2. Dispatch: canonical `flywheel run`, raw `opencode run` as fallback
 
-Never trust flag names from memory. Before relying on `opencode run` options, run:
+The first choice is `flywheel run <task>` after `flywheel log --task <id> --kind planned --brief
+<path>`: it attaches the brief with `--file`, applies the deny policy, and records every event
+(`flywheel run <task> -h` for its flags). Keep the hand-built `opencode run` command below as the
+fallback — e.g. dispatching one increment of a brief. Hand-built dispatches add `--variant low`:
+on large increments the default reasoning variant spent 17-30 k reasoning tokens planning in one
+step and hit the output cap with nothing written (3 of 3 attempts); `--variant low` did the same
+increment in 493 s with at most ~1 k reasoning tokens per step.
+
+Never trust flag names from memory. Before relying on raw `opencode run` options, run:
 
 ```bash
 opencode run --help
@@ -83,7 +118,7 @@ once it lands:
 ```bash
 mkdir -p .flywheel/runs
 OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-r1" \
+  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-r1" --variant low \
   "Follow the attached brief exactly." --file .flywheel/briefs/<id>.txt < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
 ```
 
@@ -148,15 +183,20 @@ output cap was hit), `part.tokens` `{total, input, output, reasoning, cache: {re
 | --- | --- | --- |
 | starting | no output yet | wait — a healthy run writes its first event within about 30 s (the probe took 25 s end to end). |
 | silent | no output after 60 s | check, in order: was stdin closed? is there a provider error in the opencode log? Only then treat it as stalled. |
+| stalled | no output for ~10 min while the process is alive | a hung provider stream (a step started but never finished). Stop the process tree by PID, never by name (§3 processes), and redispatch fresh; a quarter-hour without a step_finish is never healthy. |
 | running | events arriving | do nothing; let it run. |
 | exploring | distinct files read keeps rising, zero edits, no file read over and over | healthy for large tasks — one run read for 53 steps, about 40 minutes, then made 50 edits steadily. Compare the plan message the brief asked for (see §1) with what it is reading; if off course, stop it by PID and resume with a delta, otherwise leave it. |
 | off-course | reads or greps of paths outside the task's worktree (library source), or probe files written outside `owns:` | unlike `exploring` (relevant files inside the worktree), stop it by PID and resume with a delta that lists the APIs it needs. |
 | long step | events stop for 5-10 min during a large generation | not a stall; do not kill it. |
 | read loop | the same file read again and again, no edits (compare `"tool":"read"` with `"tool":"edit"`/`"tool":"write"` counts in the run file) | stop it by PID, check which agent the opencode log shows for the session (`agent=` on its lines), and re-dispatch with `--pure`. |
-| capped | rc 0 and the last reason is `length` | resume the same session, with the write rule as the delta. |
+| capped | rc 0 and the last reason is `length` | rerun fresh with `--variant low` and the file in named parts (the default reasoning variant plans so hard it caps with nothing written — see §2). |
 | provider error | an `error` event in the JSONL, or errors only in the opencode log | see §8. |
 | denied | a bash tool `error` event carrying the rule message: "The user has specified a rule which prevents you from using this specific tool call" | the foreman treats a worker trying to get around it as a signal — stop it and triage; never help it around the block. |
 | done | rc 0 and the last reason is `stop` | review it (§6). |
+
+A gate or test that fails with "An Application Control policy has blocked this file" is the
+**host**, not the code — that message is Windows Smart App Control blocking a freshly built
+binary. Rerun, don't rework.
 
 Detection commands:
 
@@ -326,9 +366,14 @@ When the diff fails review, the orchestrator **sends a correction to the worker*
 the implementation itself. Resume the worker's session using the **emitted session id** with a delta
 brief (only the correction, not a restated task):
 
+A correction to work the session **just did** may resume it. A late or small fix, or one touching
+other files, goes to a **fresh** session with a self-contained brief: the owns/needs header, the
+defects, and one test per defect. Evidence: a resumed session grew from 104 k to 279 k tokens and
+from 18 to 63-79 s per step, while fresh fix sessions ran 11-36 steps in 96-431 s.
+
 ```bash
 OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-c<n>" --session "<emitted-sessionID>" \
+  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-c<n>" --variant low --session "<emitted-sessionID>" \
   "Apply the attached correction to the same task." --file .flywheel/briefs/<id>.delta.txt < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
 ```
 

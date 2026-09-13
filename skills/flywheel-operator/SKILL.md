@@ -21,14 +21,23 @@ decide what runs, who runs it, and whether it landed.
 
 ## What the CLI implements today
 
-Only two subcommands exist. Everything else in this skill is the manual workflow that runs on the
-same state files until the planned subcommands land — don't invoke commands that aren't built.
+Ten subcommands exist — init, version, config, log, state, run, validate, inspect, verify,
+factory. The rest of this skill is the manual workflow that runs on the same state files until the
+planned subcommands land — don't invoke commands that aren't built.
 
 | Command | Status | What it does |
 | --- | --- | --- |
 | `flywheel init` | **implemented** | Scaffold `flywheel.md` + `.flywheel/state.json` + `.flywheel/briefs/`; refuses if either state file already exists unless `--force`. |
 | `flywheel version` | **implemented** | Print the flywheel version. |
-| `flywheel plan`, `run`, `retry`, `handoff` | **planned** | Control plane: create tasks, dispatch, resume, transfer between agents. |
+| `flywheel config` | **implemented** | Read and validate `.flywheel/config.json`. |
+| `flywheel log --task <id> --kind planned --brief <path>` | **implemented** | Record a planned brief to the event log before dispatch. |
+| `flywheel state` | **implemented** | Derive and print state from the event log. |
+| `flywheel run <task>` | **implemented** | Canonical dispatch: attach the brief with `--file`, apply the deny policy, record every event. |
+| `flywheel validate <task> [--workdir]` | **implemented** | Run the brief header's `gate:` lines on the exact tree and check `owns`; exit 0, or 5 on a failing gate or a file outside owns. |
+| `flywheel inspect <task> --verdict pass\|rework\|scrap\|escalate --session <own session>` | **implemented** | Record an inspection; refused with exit 6 for a bad verdict, a worker's session, or no passing readings for the tree as it is now. |
+| `flywheel verify [<task>...\|--all] [--json]` | **implemented** | Check the event log against rules T1, T3, T4, T5, T8; exit 0 or 6. |
+| `flywheel factory [--once\|--json]` | **implemented** | Render the floor — workers, units with run states, andon, output; bare `flywheel` opens it, one shot when stdout is not a terminal. |
+| `flywheel plan`, `retry`, `handoff` | **planned** | Control plane: create tasks, resume, transfer between agents. |
 | `flywheel status`, `trace`, `artifacts` | **planned** | Data plane: in-flight work, task positions, worker outputs. |
 
 ## Install
@@ -82,11 +91,13 @@ same state files the planned subcommands will automate. `$MODEL` is set once in
    report contract.
 2. **Brief** — the brief file from step 1 is the brief: goal, exact change, don't-touch list,
    required gates, report contract.
-3. **Dispatch (manual fallback)** — fresh run, capture rc and sessionID:
+3. **Dispatch** — first choice is `flywheel log --task <id> --kind planned --brief <path>` then
+   `flywheel run <task>`. Manual fallback (e.g. one increment of a brief) — fresh run with
+   `--variant low`, capture rc and sessionID:
    ```bash
    mkdir -p .flywheel/runs
    OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-     opencode run --pure -m "$MODEL" --auto --format json --title "<id>-r1" \
+     opencode run --pure -m "$MODEL" --auto --format json --title "<id>-r1" --variant low \
      "Follow the attached brief exactly." --file .flywheel/briefs/<id>.txt < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
    ```
    Every dispatch sets `OPENCODE_CONFIG` to the worker permission policy, which denies
@@ -98,13 +109,15 @@ same state files the planned subcommands will automate. `$MODEL` is set once in
    ```
    Record the exit code and the emitted session ID in `flywheel.md` — `flywheel run` will do this
    when it lands.
-4. **Review** — judge the actual exit status and `git diff`, never self-report. Re-run gates
-   independently on sensitive changes.
+4. **Review** — judge the actual exit status and `git diff`, never self-report. Run `flywheel
+   validate <task>` then `flywheel inspect <task> --verdict ... --session <your own session>` from
+   your own session — a worker's report is never evidence. Re-run gates independently on sensitive
+   changes.
 5. **Correct or land (manual fallback)** — resume the emitted session ID with a delta brief for
    corrections. Pass the session ID by hand; there is no automatic handoff:
    ```bash
    OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-     opencode run --pure -m "$MODEL" --auto --format json --title "<id>-c<n>" --session "<emitted-sessionID>" \
+     opencode run --pure -m "$MODEL" --auto --format json --title "<id>-c<n>" --variant low --session "<emitted-sessionID>" \
      "Apply the attached correction to the same task." --file .flywheel/briefs/<id>.delta.txt < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
    ```
 
@@ -156,6 +169,7 @@ Minimal staffing:
 ```bash
 go test ./...            # one-command validation
 git status               # what's dirty
+flywheel factory --once  # status at a glance (use --json for machine use)
 cat .flywheel/state.json # machine state
 cat .flywheel/learnings.md # what the loop has taught itself (create by hand until planned)
 grep '<sessionID>' ~/.local/share/opencode/log/opencode.log | tail -20   # provider errors (key limits) show up only here
