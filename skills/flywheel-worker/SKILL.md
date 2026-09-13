@@ -39,27 +39,35 @@ A brief is a plain-text file with these parts:
    without editing a file outside `owns:` (for example a rename forces it), stop and name that
    file in your report instead of editing it. When the brief grants "files that reference it"
    for a move or rename, list them with `grep` first and edit only those.
-2. **Implement, don't plan.** You do not redesign the brief. If the brief is ambiguous, report the
+2. **Never rewrite the shared tree or index.** Forbidden: `git stash`, `git checkout -- <path>`
+   (and any `git checkout`), `git restore`, `git reset`, `git clean`, `git switch`, `git commit`,
+   `git rebase`, `git merge`, `git cherry-pick`, `git pull`, `git push`. Other workers and the
+   orchestrator have uncommitted work in the same tree; one stash destroys it. To find out whether
+   a failure is yours, use `git diff --name-only`, a scoped gate on your own files, or a throwaway
+   `git worktree add` outside the tree. Many of these are blocked outright by permission rules; do
+   not look for a way around a block, report it.
+3. **Implement, don't plan.** You do not redesign the brief. If the brief is ambiguous, report the
    blocker. Do not silently pick a different scope.
-3. **Write in chunks.** One tool call per response, and at most 120 lines written per tool call.
+4. **Write in chunks.** One tool call per response, and at most 120 lines written per tool call.
    Build a large file across several edits. Drafting a whole file in one response hits the output
    cap: the run ends and nothing is written.
-4. **State your plan first.** Before step 20, post one short text message with your plan: what
+5. **State your plan first.** Before step 20, post one short text message with your plan: what
    you will read and what you will change. Then work.
-5. **Docs tasks: describe the code as it is.** Document what is in the code; flag what is not,
+6. **Docs tasks: describe the code as it is.** Document what is in the code; flag what is not,
    instead of documenting intended behaviour.
-6. **Run the gates.** Execute the required commands yourself; capture full output and exit status.
+7. **Run the gates.** Execute the required commands yourself; capture full output and exit status.
    If a gate fails, do not declare success — fix within `owns:`, or report what you could not fix.
    If a gate fails only in files outside `owns:`, it is probably another worker's in-flight edit.
    Do not fix it; report the files and the output.
-7. **Report evidence, not self-report.** Your final message states: files changed and why, each
+8. **Report evidence, not self-report.** Your final message states: files changed and why, each
    gate command with its exact output and exit status, explicit confirmation nothing on the
    don't-touch list was touched, a **Findings outside `owns:`** section — real problems you
    noticed outside your task, reported and not fixed (write "none" if there are none) — and
    anything uncertain or left undone.
-8. **Never commit, never push, never secrets.** Committing is the orchestrator's/user's call. No
-   credentials, keys, or tokens in any output you produce for the brief.
-9. **Detect your OS and shell — don't assume.** Check what you're running on (`$PSVersionTable` /
+9. **Never commit, never push, never secrets.** Committing is the orchestrator's/user's call; the
+   tree-rewriting commands in rule 2 are never yours to run. No credentials, keys, or tokens in
+   any output you produce for the brief.
+10. **Detect your OS and shell — don't assume.** Check what you're running on (`$PSVersionTable` /
    `$env:OS` on Windows; `uname` / `$SHELL` on macOS/Linux) and use that shell's syntax, not a
    universal one:
    - **PowerShell (Windows):** `/dev/null`, `head`, and `2>/dev/null` do not exist. Discard
@@ -70,9 +78,9 @@ A brief is a plain-text file with these parts:
    - **Bash/sh (macOS/Linux):** `/dev/null`, `head`, and `2>/dev/null` are standard. Tools are
      usually on PATH (`go build ./...`); fall back to absolute paths only when a tool is missing
      from PATH, and report if absent.
-10. **Corrections resume, they don't restart.** If the orchestrator resumes your session with a
+11. **Corrections resume, they don't restart.** If the orchestrator resumes your session with a
     delta brief, treat it as the same task continued: keep prior context, apply only the delta.
-11. **Blocked → report and halt.** Environment broken, tool missing, file on the don't-touch list
+12. **Blocked → report and halt.** Environment broken, tool missing, file on the don't-touch list
     needed — say so plainly and stop. Never take over orchestrator judgment.
 
 ## Example shape

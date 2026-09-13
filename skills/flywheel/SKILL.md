@@ -83,6 +83,9 @@ At small scale you may hold the planner, foreman, inspector and steward roles yo
 - **No unrequested commits, pushes, or secrets.** Commit and push only when the user asks;
   standing instructions in `CLAUDE.md` or `AGENTS.md` count as asking. Workers never commit. Never
   put secrets or keys in a brief.
+- **Workers never rewrite the shared tree or index.** Every dispatch carries the deny policy via
+  `OPENCODE_CONFIG`
+  ([references/worker-brief.md#2-dispatch-verify-then-use-the-safe-quoted-file-brief](references/worker-brief.md#2-dispatch-verify-then-use-the-safe-quoted-file-brief)).
 - **DRY.** Use the `opencode` CLI directly. Do not copy scripts or scaffold a framework. The
   `opencode-delegate` skill is an optional integration, never a dependency to clone.
 
@@ -107,11 +110,14 @@ Template and rules: [references/worker-brief.md](references/worker-brief.md).
 ### 2. Dispatch (safe quoted file brief)
 Verify the CLI first (`opencode run --help` — confirm flags before relying on them), then a
 **fresh run** labelled with `--title`, auto-approving permissions with `--auto`, and emitted as JSON
-so you can capture the session id:
+so you can capture the session id. Every dispatch sets `OPENCODE_CONFIG` to the worker permission
+policy so the worker cannot rewrite the shared tree (ordering and `--auto` behaviour:
+[references/worker-brief.md §2](references/worker-brief.md#2-dispatch-verify-then-use-the-safe-quoted-file-brief)):
 
 ```bash
 mkdir -p .flywheel/runs
-opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
+OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
+  opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
   "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
 ```
 
@@ -157,10 +163,12 @@ Never kill opencode processes by name.
 
 ### 5. Correct or land
 - Needs changes → send a **correction** to the worker by resuming the **emitted session id** with a
-  delta brief (never implement it yourself, never invent the session id):
+  delta brief (never implement it yourself, never invent the session id). The resume carries the
+  same `OPENCODE_CONFIG` policy ([references/worker-brief.md §2](references/worker-brief.md#2-dispatch-verify-then-use-the-safe-quoted-file-brief)):
 
 ```bash
-opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
+OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
+  opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
   "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
 ```
 

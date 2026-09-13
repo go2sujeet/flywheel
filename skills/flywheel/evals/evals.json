@@ -9,7 +9,7 @@
       "files": [],
       "expectations": [
         "Writes a bounded single-task brief stating goal, current state, exact change, don't-touch list, the repo's actual gate commands, and a report contract.",
-        "Dispatches with `opencode run --pure -m \"$MODEL\" --auto --format json --title \"<id>\"` using the approved model, a safe quoted file brief (cat into a single quoted argument), stdin closed with `< /dev/null`, and captures the exit status.",
+        "Dispatches with `OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json opencode run --pure -m \"$MODEL\" --auto --format json --title \"<id>\"` using the approved model, a safe quoted file brief (cat into a single quoted argument), stdin closed with `< /dev/null`, the worker permission policy set via `OPENCODE_CONFIG`, and captures the exit status.",
         "Records the session id emitted in the JSON output and uses only that emitted id for a later --session resume, never an invented flywheel-id string.",
         "Reviews the actual exit status and the git diff against the brief rather than trusting the worker's self-report.",
         "Runs validation commands independently when needed, but sends any implementation change to the worker.",

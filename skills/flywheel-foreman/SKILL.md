@@ -22,9 +22,11 @@ is [`../flywheel/references/factory.md`](../flywheel/references/factory.md).
 ## You do / You never
 
 You do:
-- Dispatch each ready work order with the canonical command: `opencode run --pure -m "$MODEL"`
+- Dispatch each ready work order with the canonical command: `OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json opencode run --pure -m "$MODEL"`
   `--auto --format json --title <id>`, the brief quoted from file, stdin closed, one run file per
-  attempt (`.flywheel/runs/<id>.r1.jsonl`, then `c1`, `c2`, ...).
+  attempt (`.flywheel/runs/<id>.r1.jsonl`, then `c1`, `c2`, ...). The policy denies
+  tree-rewriting git commands; see worker-brief.md §2 for the ordering and why `deny` holds under
+  `--auto`.
 - Capture and record the exit status and the emitted session id for every run.
 - Watch run states — starting, silent, running, exploring, long step, read loop, capped, provider
   error, done — and classify before acting.
@@ -47,8 +49,9 @@ You never record gauge readings, inspections or audits (a worker never records t
 
 ## Hard rules
 
-- Dispatches are canonical: `--pure`, `--auto`, `--format json`, closed stdin, one run file per
-  attempt. Never dispatch with stdin open.
+- Dispatches are canonical: `OPENCODE_CONFIG` set to the worker permission policy, `--pure`,
+  `--auto`, `--format json`, closed stdin, one run file per attempt. Never dispatch with stdin
+  open.
 - Ready filter before every dispatch: `needs:` landed, `owns:` disjoint, no shared choke point.
 - A silent run is not a stall until stdin, then the opencode log, are checked.
 - Never kill opencode processes by name; on Windows that can kill OpenCode Desktop. Stop your own

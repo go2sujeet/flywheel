@@ -59,15 +59,28 @@ opencode run --help
 ```
 
 A **fresh run** must label the task with `--title` (human-readable), auto-approve permissions with
-`--auto`, and emit `--format json` so the session id comes back in the output. Dispatch with the
-brief quoted into a single argument — quoting the `$(cat ...)` substitution prevents word-splitting
-and glob expansion and keeps the brief out of your editing surface:
+`--auto`, and emit `--format json` so the session id comes back in the output. Every dispatch —
+fresh and resume — sets `OPENCODE_CONFIG` to the worker permission policy, which denies the
+tree-rewriting git commands (§9), then dispatches with the brief quoted into a single argument —
+quoting the `$(cat ...)` substitution prevents word-splitting and glob expansion and keeps the
+brief out of your editing surface:
 
 ```bash
 mkdir -p .flywheel/runs
-opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
+OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
+  opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
   "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
 ```
+
+`OPENCODE_CONFIG` loads the worker permission policy
+(`skills/flywheel/references/worker-permissions.json`, relative to wherever the skill is installed;
+consumers may copy the file into their repo and point the variable at the copy). In that file the
+catch-all `"*": "allow"` comes **first** and the `deny` rules after it, because OpenCode's **last
+matching rule wins** — with the catch-all last, nothing is denied (verified 2026-09-13, OpenCode
+1.18.30). A `deny` blocks the command even under `--auto`, and OpenCode checks **each command in a
+chain**, so `cd . && git stash list` and `echo ok; git reset --soft HEAD` are denied too.
+`git -C .` slipped past a policy without a `git -C*` rule, which is why the policy below also
+denies `git -C*`, `git --work-tree*` and `git --git-dir*`.
 
 - `-m "$MODEL"` is the **approved default**. Never switch providers or models silently, and never
   assert a metered model is free. Cost is small but real: a one-line probe on the approved model on
@@ -125,6 +138,7 @@ output cap was hit), `part.tokens` `{total, input, output, reasoning, cache: {re
 | read loop | the same file read again and again, no edits (compare `"tool":"read"` with `"tool":"edit"`/`"tool":"write"` counts in the run file) | stop it by PID, check which agent the opencode log shows for the session (`agent=` on its lines), and re-dispatch with `--pure`. |
 | capped | rc 0 and the last reason is `length` | resume the same session, with the write rule as the delta. |
 | provider error | an `error` event in the JSONL, or errors only in the opencode log | see §8. |
+| denied | a bash tool `error` event carrying the rule message: "The user has specified a rule which prevents you from using this specific tool call" | the foreman treats a worker trying to get around it as a signal — stop it and triage; never help it around the block. |
 | done | rc 0 and the last reason is `stop` | review it (§6). |
 
 Detection commands:
@@ -228,6 +242,16 @@ uncommitted work — is not free real estate. A brief's don't-touch list must na
 in-flight changes the worker could otherwise clobber. If you can't guarantee disjoint ownership for a
 change, don't dispatch it in parallel.
 
+**Shared tree means no tree-rewriting commands.** In a consumer field run, a worker ran
+`git stash push` on the whole shared working tree to check whether a typecheck error was its own.
+It took three other workers' and the orchestrator's uncommitted edits with it; the pop failed
+because another worker had edited a file meanwhile, and the restore that followed overwrote newer
+edits and dropped the stash. Another worker saw its edits vanish mid-run. A shared tree makes any
+tree-rewriting command — `git stash`, `git checkout`, `git restore`, `git reset`, `git clean`,
+`git switch`, `git commit`, `git rebase`, `git merge`, `git cherry-pick`, `git pull`, `git push` —
+destructive to other workers' in-flight work, which is why §9 forbids them and every dispatch
+carries the deny policy (§2). A per-task `git worktree add` (#45) removes the shared tree entirely.
+
 **Check for orphans between batches.** Orphan accumulation is silent and only shows up as unexplained
 stalls later, so a long orchestration session should run the orphan check from §3 between batches —
 reap orphans only when nothing is in flight, and never clean up while a dispatch is running.
@@ -286,7 +310,8 @@ the implementation itself. Resume the worker's session using the **emitted sessi
 brief (only the correction, not a restated task):
 
 ```bash
-opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
+OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
+  opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
   "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
 ```
 
@@ -313,6 +338,7 @@ field run after credit exhaustion. Never pick the fallback yourself, and never a
 
 ## 9. Hard rules
 
+- Workers never rewrite the shared tree or index; dispatches carry the deny policy (§2).
 - No commits or pushes unless the user asks; standing instructions in the repo's `CLAUDE.md` or
   `AGENTS.md` count as asking. Workers never commit.
 - No secrets, keys, tokens, or credentials in a brief or on any command line.
