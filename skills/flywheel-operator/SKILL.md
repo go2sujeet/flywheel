@@ -85,9 +85,13 @@ same state files the planned subcommands will automate. `$MODEL` is set once in
 3. **Dispatch (manual fallback)** — fresh run, capture rc and sessionID:
    ```bash
    mkdir -p .flywheel/runs
-   opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
+   OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
+     opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
      "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
    ```
+   Every dispatch sets `OPENCODE_CONFIG` to the worker permission policy, which denies
+   tree-rewriting git commands (ordering and `--auto` behaviour:
+   [../flywheel/references/worker-brief.md#2-dispatch-verify-then-use-the-safe-quoted-file-brief](../flywheel/references/worker-brief.md#2-dispatch-verify-then-use-the-safe-quoted-file-brief)).
    Session id (every JSONL event carries it):
    ```bash
    grep -o '"sessionID":"[^"]*"' .flywheel/runs/<id>.r1.jsonl | head -1
@@ -99,7 +103,8 @@ same state files the planned subcommands will automate. `$MODEL` is set once in
 5. **Correct or land (manual fallback)** — resume the emitted session ID with a delta brief for
    corrections. Pass the session ID by hand; there is no automatic handoff:
    ```bash
-   opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
+   OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
+     opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
      "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
    ```
 
