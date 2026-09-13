@@ -27,6 +27,10 @@ func register(name string, summary string, run func([]string)) {
 
 func main() {
 	if len(os.Args) < 2 {
+		if _, err := os.Stat(".flywheel"); err == nil {
+			runFactory(nil)
+			return
+		}
 		usage(os.Stderr)
 		os.Exit(2)
 	}

@@ -1,0 +1,14 @@
+{"type":"step_start","sessionID":"ses_exploring_0000001","part":{"type":"step_start","step":1,"startTime":"2026-09-12T00:00:00Z"},"time":{"startedAt":"2026-09-12T00:00:00Z"}}
+{"type":"tool_use","sessionID":"ses_exploring_0000001","part":{"type":"tool_use","tool":"read","state":{"input":{"filePath":"a.go"}}}}
+{"type":"step_finish","sessionID":"ses_exploring_0000001","part":{"type":"step_finish","reason":"stop","tokens":{"input":10,"output":2,"reasoning":1,"cache":{"read":10,"write":0}},"cost":0.0001}}
+{"type":"tool_use","sessionID":"ses_exploring_0000001","part":{"type":"tool_use","tool":"read","state":{"input":{"filePath":"b.go"}}}}
+{"type":"step_finish","sessionID":"ses_exploring_0000001","part":{"type":"step_finish","reason":"stop","tokens":{"input":10,"output":2,"reasoning":1,"cache":{"read":10,"write":0}},"cost":0.0001}}
+{"type":"tool_use","sessionID":"ses_exploring_0000001","part":{"type":"tool_use","tool":"read","state":{"input":{"filePath":"c.go"}}}}
+{"type":"step_finish","sessionID":"ses_exploring_0000001","part":{"type":"step_finish","reason":"stop","tokens":{"input":10,"output":2,"reasoning":1,"cache":{"read":10,"write":0}},"cost":0.0001}}
+{"type":"step_finish","sessionID":"ses_exploring_0000001","part":{"type":"step_finish","reason":"stop","tokens":{"input":10,"output":2,"reasoning":1,"cache":{"read":10,"write":0}},"cost":0.0001}}
+{"type":"step_finish","sessionID":"ses_exploring_0000001","part":{"type":"step_finish","reason":"stop","tokens":{"input":10,"output":2,"reasoning":1,"cache":{"read":10,"write":0}},"cost":0.0001}}
+{"type":"step_finish","sessionID":"ses_exploring_0000001","part":{"type":"step_finish","reason":"stop","tokens":{"input":10,"output":2,"reasoning":1,"cache":{"read":10,"write":0}},"cost":0.0001}}
+{"type":"step_finish","sessionID":"ses_exploring_0000001","part":{"type":"step_finish","reason":"stop","tokens":{"input":10,"output":2,"reasoning":1,"cache":{"read":10,"write":0}},"cost":0.0001}}
+{"type":"step_finish","sessionID":"ses_exploring_0000001","part":{"type":"step_finish","reason":"stop","tokens":{"input":10,"output":2,"reasoning":1,"cache":{"read":10,"write":0}},"cost":0.0001}}
+{"type":"step_finish","sessionID":"ses_exploring_0000001","part":{"type":"step_finish","reason":"stop","tokens":{"input":10,"output":2,"reasoning":1,"cache":{"read":10,"write":0}},"cost":0.0001}}
+{"type":"step_finish","sessionID":"ses_exploring_0000001","part":{"type":"step_finish","reason":"stop","tokens":{"input":10,"output":2,"reasoning":1,"cache":{"read":10,"write":0}},"cost":0.0001}}

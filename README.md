@@ -141,9 +141,8 @@ git still works.*
 
 4. **Run.** Ask your lead agent to load the `flywheel` skill and drive the loop: plan → brief →
    dispatch → review → correct-or-land. The lead writes precise bounded briefs, dispatches OpenCode
-   workers, and judges the evidence. Today the lead records each event with `flywheel log`;
-   `flywheel run` (in progress, [#20](https://github.com/go2sujeet/flywheel/issues/20)) will record
-   runs automatically.
+   workers, and judges the evidence. `flywheel run` records each dispatch automatically; the
+   lead records the other events (reviews, landings) with `flywheel log`.
 
 ## CLI
 
@@ -157,12 +156,13 @@ git still works.*
 | `flywheel run` | available | Dispatch an OpenCode worker and capture the run. |
 | `flywheel status` | planned ([#21](https://github.com/go2sujeet/flywheel/issues/21)) | Classify the state of runs and tasks. |
 | `flywheel watch` | planned ([#22](https://github.com/go2sujeet/flywheel/issues/22)) | Watch the line, one readable line per transition. |
-| `flywheel validate` / `flywheel supervise` | planned ([#55](https://github.com/go2sujeet/flywheel/issues/55)) | Machine gauges: measure finished units, run the gates. |
-| `flywheel verify` | planned ([#54](https://github.com/go2sujeet/flywheel/issues/54)) | Check the event log and the transition rules. |
-| `flywheel inspect` | planned ([#24](https://github.com/go2sujeet/flywheel/issues/24)) | Isolated review of a finished unit in its own worktree. |
+| `flywheel validate` | available | Machine gauges: run a task's gate: lines on the exact tree and check owns (exit 0/5). |
+| `flywheel supervise` | planned ([#55](https://github.com/go2sujeet/flywheel/issues/55)) | Machine gauges: measure finished units, run the gates. |
+| `flywheel verify` | available | Check the event log against the transition rules T1, T3, T4, T5, T8 (exit 0/6). |
+| `flywheel inspect` | available | Inspection verdict, refused unless the gauges' readings cover the tree as it is now (T3/T4/T8; exit 6). |
 | `flywheel audit` | planned ([#61](https://github.com/go2sujeet/flywheel/issues/61)) | External audit of first articles and samples. |
 | `flywheel land` | planned ([#45](https://github.com/go2sujeet/flywheel/issues/45)) | Local landing queue: rebase, re-measure, fast-forward. |
-| `flywheel factory` | planned ([#63](https://github.com/go2sujeet/flywheel/issues/63)) | Live terminal dashboard of the floor; bare `flywheel` opens it ([#69](https://github.com/go2sujeet/flywheel/issues/69)). |
+| `flywheel factory` | available | Live terminal dashboard of the floor; bare `flywheel` opens it ([#63](https://github.com/go2sujeet/flywheel/issues/63)). |
 | `flywheel explain`, `flywheel context` | planned ([#58](https://github.com/go2sujeet/flywheel/issues/58)) | A task's traveler; the factory state sized for a joining agent. |
 | `flywheel trace` | planned ([#62](https://github.com/go2sujeet/flywheel/issues/62)) | Everything one session did, across tasks. |
 | `flywheel feedback` | planned ([#37](https://github.com/go2sujeet/flywheel/issues/37)–[#40](https://github.com/go2sujeet/flywheel/issues/40)) | Turn signals into learnings; export and submit upstream. |
