@@ -42,20 +42,25 @@ type TaskState struct {
 
 // kindRank orders same-instant events so the status machine replays in the
 // intended order: planned < amended < dispatched < started < worker_plan <
-// finished < report < reviewed < blocked < landed. worker_plan and report
-// carry no status; the ranks keep a same-timestamp dispatched, started,
-// worker_plan, report, finished sequence deriving finished.
+// finished < report < validated < owns_checked < inspected < reviewed <
+// blocked < landed. worker_plan, report, validated and owns_checked carry no
+// status; the ranks keep a same-timestamp dispatched, started, worker_plan,
+// report, finished sequence deriving finished, and gauge kinds after a
+// same-timestamp inspected deriving its verdict.
 var kindRank = map[string]int{
-	"planned":     0,
-	"amended":     1,
-	"dispatched":  2,
-	"started":     3,
-	"worker_plan": 4,
-	"finished":    5,
-	"report":      6,
-	"reviewed":    7,
-	"blocked":     8,
-	"landed":      9,
+	"planned":      0,
+	"amended":      1,
+	"dispatched":   2,
+	"started":      3,
+	"worker_plan":  4,
+	"finished":     5,
+	"report":       6,
+	"validated":    7,
+	"owns_checked": 8,
+	"inspected":    9,
+	"reviewed":     10,
+	"blocked":      11,
+	"landed":       12,
 }
 
 // eventSortKey is the precomputed comparison key for one event, so sorting
@@ -151,6 +156,17 @@ func Derive(events []Event) State {
 			ts.Status = "blocked"
 		case "landed":
 			ts.Status = "landed"
+		case "inspected":
+			switch e.Verdict {
+			case "pass":
+				ts.Status = "passed"
+			case "rework":
+				ts.Status = "needs-correction"
+			case "scrap":
+				ts.Status = "rejected"
+			case "escalate":
+				ts.Status = "blocked"
+			}
 		case "amended":
 			ts.Brief = e.Brief
 			ts.Needs = e.Needs

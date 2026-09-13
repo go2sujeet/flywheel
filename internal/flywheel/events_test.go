@@ -300,3 +300,77 @@ func TestEventNewFieldsRoundTrip(t *testing.T) {
 		t.Errorf("plain event emitted the new optional fields: %q", lines[1])
 	}
 }
+
+func TestValidateNewGaugeKinds(t *testing.T) {
+	if err := Validate(Event{Task: "T1", Kind: "validated"}); err == nil {
+		t.Error("Validate() accepted validated without gate and tree")
+	} else if !strings.Contains(err.Error(), "gate and tree") {
+		t.Errorf("Validate() error = %v, want gate and tree message", err)
+	}
+	if err := Validate(Event{Task: "T1", Kind: "validated", Gate: "1", Tree: "abc123"}); err != nil {
+		t.Errorf("Validate() rejected validated/gate/tree: %v", err)
+	}
+	if err := Validate(Event{Task: "T1", Kind: "inspected"}); err == nil {
+		t.Error("Validate() accepted inspected without verdict")
+	} else if !strings.Contains(err.Error(), "verdict") {
+		t.Errorf("Validate() error = %v, want verdict message", err)
+	}
+	for _, v := range []string{"pass", "rework", "scrap", "escalate"} {
+		if err := Validate(Event{Task: "T1", Kind: "inspected", Verdict: v}); err != nil {
+			t.Errorf("Validate() rejected inspected/%s: %v", v, err)
+		}
+	}
+	if err := Validate(Event{Task: "T1", Kind: "inspected", Verdict: "maybe"}); err == nil {
+		t.Error("Validate() accepted inspected verdict maybe")
+	}
+	if err := Validate(Event{Task: "T1", Kind: "owns_checked"}); err != nil {
+		t.Errorf("Validate() rejected owns_checked: %v", err)
+	}
+}
+
+func TestEventNewGaugeFieldsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	e := Event{
+		TS:         "2026-09-13T00:00:00Z",
+		Task:       "T1",
+		Kind:       "validated",
+		Tree:       "abc123",
+		Gate:       "1",
+		Command:    "go test ./internal/flywheel/",
+		DurationMS: 1234,
+		Outside:    []string{"x.go", "y.go"},
+		Persona:    "supervisor",
+	}
+	if err := AppendEvent(dir, e); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	if len(evs) != 1 {
+		t.Fatalf("ReadEvents() = %d events, want 1", len(evs))
+	}
+	got := evs[0]
+	if got.Tree != "abc123" || got.Gate != "1" || got.Command != "go test ./internal/flywheel/" || got.DurationMS != 1234 {
+		t.Errorf("round trip tree/gate/command/duration mismatch: %v", got)
+	}
+	if len(got.Outside) != 2 || got.Outside[0] != "x.go" || got.Outside[1] != "y.go" {
+		t.Errorf("round trip outside mismatch: %v", got.Outside)
+	}
+	if got.Persona != "supervisor" {
+		t.Errorf("persona = %q, want supervisor", got.Persona)
+	}
+
+	b, err := os.ReadFile(filepath.Join(dir, ".flywheel", "events.jsonl"))
+	if err != nil {
+		t.Fatalf("read events.jsonl: %v", err)
+	}
+	content := string(b)
+	for _, k := range []string{`"tree"`, `"gate"`, `"command"`, `"duration_ms"`, `"outside"`, `"persona"`} {
+		if !strings.Contains(content, k) {
+			t.Errorf("log missing key %s: %q", k, content)
+		}
+	}
+}
