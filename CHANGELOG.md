@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0](https://github.com/go2sujeet/flywheel/compare/v0.2.0...v0.3.0) (2026-09-13)
+
+
+### Features
+
+* add flywheel factory, the live view of the factory floor ([#88](https://github.com/go2sujeet/flywheel/issues/88)) ([5d0a5f7](https://github.com/go2sujeet/flywheel/commit/5d0a5f7192e3865ba34612a63fd8c3cba2d577dd))
+* add flywheel run, one correct OpenCode dispatch recorded as events ([#78](https://github.com/go2sujeet/flywheel/issues/78)) ([d8e8faa](https://github.com/go2sujeet/flywheel/commit/d8e8faaebef8bcdc1d48f08f601b1ac7087f639c))
+* add machine gauges, inspection and verify (validate, inspect, verify) ([#86](https://github.com/go2sujeet/flywheel/issues/86)) ([b86a562](https://github.com/go2sujeet/flywheel/commit/b86a5628d8f07b03473baf92525a2de885071230))
+
+
+### Documentation
+
+* fold dogfooding learnings into the skills ([#77](https://github.com/go2sujeet/flywheel/issues/77)) ([6c1ce29](https://github.com/go2sujeet/flywheel/commit/6c1ce2902db5399ff96728e73e1dc458998a9b35))
+* lead the README with the factory, add real CLI screenshots ([#75](https://github.com/go2sujeet/flywheel/issues/75)) ([77de297](https://github.com/go2sujeet/flywheel/commit/77de2972809cb954971d5765155b3eeac29b8301))
+* README screenshots for the gauges and the factory floor ([#90](https://github.com/go2sujeet/flywheel/issues/90)) ([664325d](https://github.com/go2sujeet/flywheel/commit/664325db78dc180b89d135a02fa84188f7c4b216))
+* teach the skills the gauges, the factory view and measured worker tactics ([#89](https://github.com/go2sujeet/flywheel/issues/89)) ([b43c293](https://github.com/go2sujeet/flywheel/commit/b43c293655c8851e69faba001a1f132766fcea18))
+
 ## [0.2.0](https://github.com/go2sujeet/flywheel/compare/v0.1.2...v0.2.0) (2026-09-13)
 
 
