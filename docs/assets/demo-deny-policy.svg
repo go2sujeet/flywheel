@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="872" height="252" viewBox="0 0 872 252" role="img" aria-label="A worker cannot rewrite the shared tree">
+  <rect x="0" y="0" width="872" height="252" rx="12" fill="#0d1117"/>
+  <rect x="0" y="0" width="872" height="36" fill="#0d1117"/>
+  <circle cx="26" cy="18" r="6" fill="#ff5f57"/>
+  <circle cx="48" cy="18" r="6" fill="#febc2e"/>
+  <circle cx="70" cy="18" r="6" fill="#28c840"/>
+  <text x="436" y="22" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" fill="#8b949e">A worker cannot rewrite the shared tree</text>
+  <text x="20" y="69" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <rect x="17" y="52" width="837.6" height="14" rx="3" fill="#161b22"/>
+    <tspan xml:space="preserve" fill="#3fb950">$ </tspan><tspan xml:space="preserve">OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json opencode run --pure --auto ...</tspan>
+  </text>
+  <text x="20" y="89" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">worker&gt; git -C . stash list</tspan>
+  </text>
+  <text x="20" y="109" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  denied: The user has specified a rule which prevents you from using this specific tool call.</tspan>
+  </text>
+  <text x="20" y="129" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">worker&gt; git --git-dir=.git stash list</tspan>
+  </text>
+  <text x="20" y="149" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  denied: The user has specified a rule which prevents you from using this specific tool call.</tspan>
+  </text>
+  <text x="20" y="169" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">worker&gt; git diff --name-only</tspan>
+  </text>
+  <text x="20" y="189" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  ok</tspan>
+  </text>
+  <text x="20" y="209" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">worker&gt; git log --oneline -1</tspan>
+  </text>
+  <text x="20" y="229" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">  ok: a448e75 init</tspan>
+  </text>
+</svg>

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1452" height="312" viewBox="0 0 1452 312" role="img" aria-label="record a task, derive state">
+  <rect x="0" y="0" width="1452" height="312" rx="12" fill="#0d1117"/>
+  <rect x="0" y="0" width="1452" height="36" fill="#0d1117"/>
+  <circle cx="26" cy="18" r="6" fill="#ff5f57"/>
+  <circle cx="48" cy="18" r="6" fill="#febc2e"/>
+  <circle cx="70" cy="18" r="6" fill="#28c840"/>
+  <text x="726" y="22" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" fill="#8b949e">record a task, derive state</text>
+  <text x="20" y="69" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <rect x="17" y="52" width="358.8" height="14" rx="3" fill="#161b22"/>
+    <tspan xml:space="preserve" fill="#3fb950">$ </tspan><tspan xml:space="preserve">flywheel log --dir demo --json - &lt;&lt;'EOF'</tspan>
+  </text>
+  <text x="20" y="89" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">&gt; {&quot;ts&quot;:&quot;2026-09-12T09:00:00.000Z&quot;,&quot;task&quot;:&quot;T1&quot;,&quot;kind&quot;:&quot;planned&quot;,&quot;brief&quot;:&quot;.flywheel/briefs/T1.txt&quot;,&quot;needs&quot;:[&quot;T0&quot;],&quot;owns&quot;:[&quot;docs/assets/&quot;]}</tspan>
+  </text>
+  <text x="20" y="109" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">&gt; EOF</tspan>
+  </text>
+  <text x="20" y="129" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <rect x="17" y="112" width="358.8" height="14" rx="3" fill="#161b22"/>
+    <tspan xml:space="preserve" fill="#3fb950">$ </tspan><tspan xml:space="preserve">flywheel log --dir demo --json - &lt;&lt;'EOF'</tspan>
+  </text>
+  <text x="20" y="149" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">&gt; {&quot;ts&quot;:&quot;2026-09-12T09:10:00.000Z&quot;,&quot;task&quot;:&quot;T1&quot;,&quot;kind&quot;:&quot;dispatched&quot;,&quot;session&quot;:&quot;sess-01H2J3K4L5M6N7P&quot;,&quot;model&quot;:&quot;openrouter/deepseek/deepseek-v4-flash-0731&quot;,&quot;attempt&quot;:&quot;r1&quot;}</tspan>
+  </text>
+  <text x="20" y="169" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">&gt; EOF</tspan>
+  </text>
+  <text x="20" y="189" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <rect x="17" y="172" width="358.8" height="14" rx="3" fill="#161b22"/>
+    <tspan xml:space="preserve" fill="#3fb950">$ </tspan><tspan xml:space="preserve">flywheel log --dir demo --json - &lt;&lt;'EOF'</tspan>
+  </text>
+  <text x="20" y="209" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">&gt; {&quot;ts&quot;:&quot;2026-09-12T09:40:00.000Z&quot;,&quot;task&quot;:&quot;T1&quot;,&quot;kind&quot;:&quot;finished&quot;,&quot;rc&quot;:0,&quot;session&quot;:&quot;sess-01H2J3K4L5M6N7P&quot;,&quot;attempt&quot;:&quot;r1&quot;,&quot;reason&quot;:&quot;done&quot;}</tspan>
+  </text>
+  <text x="20" y="229" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">&gt; EOF</tspan>
+  </text>
+  <text x="20" y="249" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <rect x="17" y="232" width="232.8" height="14" rx="3" fill="#161b22"/>
+    <tspan xml:space="preserve" fill="#3fb950">$ </tspan><tspan xml:space="preserve">flywheel state --dir demo</tspan>
+  </text>
+  <text x="20" y="269" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">T1  finished  attempts=1  openrouter/deepseek/deepseek-v4-flash-0731</tspan>
+  </text>
+  <text x="20" y="289" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#e6edf3">
+    <tspan xml:space="preserve">counts finished=1</tspan>
+  </text>
+</svg>
