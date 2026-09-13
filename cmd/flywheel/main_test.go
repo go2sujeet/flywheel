@@ -6,49 +6,41 @@ import (
 	"testing"
 )
 
-// TestHelpTextConvertedCommands checks that every command converted in this
-// increment renders help starting with its usage and naming every flag its
-// FlagSet defines.
-func TestHelpTextConvertedCommands(t *testing.T) {
-	converted := []struct {
-		name  string
-		flags func() *flag.FlagSet
-	}{
-		{"version", nil},
-		{"init", func() *flag.FlagSet { fs, _ := initFlags(); return fs }},
-		{"log", func() *flag.FlagSet { fs, _ := logFlags(); return fs }},
-		{"state", func() *flag.FlagSet { fs, _ := stateFlags(); return fs }},
-		{"config", nil},
-	}
-	for _, c := range converted {
-		h := helpText(c.name)
-		wantPrefix := "usage: flywheel " + c.name
+// TestHelpTextAllCommands ranges over the commands map itself: every
+// registered command must have registerHelp, its help must start with the
+// "flywheel <name>" usage, and the help must name every flag its FlagSet
+// defines.
+func TestHelpTextAllCommands(t *testing.T) {
+	for name := range commands {
+		c := commands[name]
+		if c.usage == "" {
+			t.Errorf("%s: registered without registerHelp", name)
+			continue
+		}
+		h := helpText(name)
+		wantPrefix := "usage: flywheel " + name
 		if !strings.HasPrefix(h, wantPrefix) {
-			t.Errorf("%s: helpText = %q, want prefix %q", c.name, h, wantPrefix)
+			t.Errorf("%s: helpText = %q, want prefix %q", name, h, wantPrefix)
 		}
 		if c.flags == nil {
 			continue
 		}
 		c.flags().VisitAll(func(f *flag.Flag) {
 			if !strings.Contains(h, f.Name) {
-				t.Errorf("%s: helpText missing flag %q\n%s", c.name, f.Name, h)
+				t.Errorf("%s: helpText missing flag %q\n%s", name, f.Name, h)
 			}
 		})
 	}
 }
 
-// TestHelpTextFallback checks that a command without registerHelp falls back
-// to its name and summary.
-func TestHelpTextFallback(t *testing.T) {
-	for _, name := range []string{"run", "validate", "inspect", "verify", "factory"} {
-		h := helpText(name)
-		wantPrefix := "usage: flywheel " + name
-		if !strings.HasPrefix(h, wantPrefix) {
-			t.Errorf("%s: fallback helpText = %q, want prefix %q", name, h, wantPrefix)
-		}
-		if !strings.Contains(h, commands[name].summary) {
-			t.Errorf("%s: fallback helpText missing summary\n%s", name, h)
-		}
+// TestBareAction checks the bare `flywheel` decision: open the factory view
+// when ./.flywheel exists, print the global help otherwise.
+func TestBareAction(t *testing.T) {
+	if got := bareAction(true); got != "factory" {
+		t.Errorf("bareAction(true) = %q, want %q", got, "factory")
+	}
+	if got := bareAction(false); got != "help" {
+		t.Errorf("bareAction(false) = %q, want %q", got, "help")
 	}
 }
 

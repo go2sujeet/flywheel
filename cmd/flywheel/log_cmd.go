@@ -38,7 +38,7 @@ func logFlags() (*flag.FlagSet, *logOptions) {
 	fs := flag.NewFlagSet("log", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	o := &logOptions{}
-	o.dir = *fs.String("dir", ".", "target directory (default: current working directory)")
+	o.dir = *fs.String("dir", ".", "target directory")
 	o.jsonIn = *fs.String("json", "", "file of events to append, or - for stdin")
 	o.task = *fs.String("task", "", "task id")
 	o.kind = *fs.String("kind", "", "event kind")

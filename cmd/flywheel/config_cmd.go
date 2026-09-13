@@ -79,7 +79,7 @@ func configUsage(w io.Writer) {
 	fmt.Fprintln(w, "  validate       check the config and list every problem")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "flags:")
-	fmt.Fprintln(w, "  --dir DIR      project directory (default: current working directory)")
+	fmt.Fprintln(w, "  --dir DIR      project directory")
 }
 
 func runConfigSet(args []string) {

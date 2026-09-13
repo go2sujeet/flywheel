@@ -76,10 +76,25 @@ func hasHelpFlag(args []string) bool {
 	return false
 }
 
+// bareAction decides what a bare `flywheel` (no arguments) does: open the
+// factory view when ./.flywheel exists, print the global help otherwise.
+func bareAction(flywheelDirExists bool) string {
+	if flywheelDirExists {
+		return "factory"
+	}
+	return "help"
+}
+
+// flywheelDirExists reports whether ./.flywheel is present.
+func flywheelDirExists() bool {
+	_, err := os.Stat(".flywheel")
+	return err == nil
+}
+
 func main() {
 	args := os.Args[1:]
 	if len(args) == 0 {
-		if _, err := os.Stat(".flywheel"); err == nil {
+		if bareAction(flywheelDirExists()) == "factory" {
 			runFactory(nil)
 			return
 		}
@@ -102,7 +117,7 @@ func main() {
 	c, ok := commands[args[0]]
 	if !ok {
 		fmt.Fprintf(os.Stderr, "flywheel: unknown subcommand %q\n", args[0])
-		usage(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Run 'flywheel help' for the list.")
 		os.Exit(2)
 	}
 	if hasHelpFlag(args[1:]) {

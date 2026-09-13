@@ -27,7 +27,7 @@ func stateFlags() (*flag.FlagSet, *stateOptions) {
 	fs := flag.NewFlagSet("state", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	o := &stateOptions{}
-	o.dir = *fs.String("dir", ".", "target directory (default: current working directory)")
+	o.dir = *fs.String("dir", ".", "target directory")
 	o.asJSON = *fs.Bool("json", false, "print the derived state as JSON")
 	return fs, o
 }

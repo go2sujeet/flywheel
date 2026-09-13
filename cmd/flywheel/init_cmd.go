@@ -25,7 +25,7 @@ func initFlags() (*flag.FlagSet, *initOptions) {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	o := &initOptions{}
-	o.dir = *fs.String("dir", ".", "target directory (default: current working directory)")
+	o.dir = *fs.String("dir", ".", "target directory")
 	o.force = *fs.Bool("force", false, "reset existing flywheel.md and .flywheel/state.json (directories and symlinks are still refused)")
 	return fs, o
 }

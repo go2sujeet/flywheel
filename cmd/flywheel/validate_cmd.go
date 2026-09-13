@@ -12,6 +12,23 @@ import (
 
 func init() {
 	register("validate", "run a task's gates and check owns", runValidate)
+	registerHelp("validate", "flywheel validate <task> [--dir DIR] [--workdir PATH]", func() *flag.FlagSet { fs, _ := validateFlags(); return fs })
+}
+
+// validateOptions holds the parsed validate flags.
+type validateOptions struct {
+	dir     string
+	workdir string
+}
+
+// validateFlags defines validate's flags once, so help and run share them.
+func validateFlags() (*flag.FlagSet, *validateOptions) {
+	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	o := &validateOptions{}
+	o.dir = *fs.String("dir", ".", "target directory")
+	o.workdir = *fs.String("workdir", "", "git working tree the gates run in")
+	return fs, o
 }
 
 // validateUsage prints the flywheel validate usage line.
@@ -24,10 +41,7 @@ func validateUsage(w io.Writer) {
 // Exit codes: 0 all gates pass and nothing is outside owns, 5 otherwise, 2
 // usage, 1 any other error.
 func runValidate(args []string) {
-	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	dir := fs.String("dir", ".", "target directory (default: current working directory)")
-	workdir := fs.String("workdir", "", "git working tree the gates run in (default: --dir)")
+	fs, o := validateFlags()
 	var task string
 	var parseArgs []string
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -49,7 +63,7 @@ func runValidate(args []string) {
 		}
 		task = fs.Arg(0)
 	}
-	res, err := flywheel.ValidateTask(*dir, task, flywheel.ValidateOptions{Dir: *dir, Workdir: *workdir})
+	res, err := flywheel.ValidateTask(o.dir, task, flywheel.ValidateOptions{Dir: o.dir, Workdir: o.workdir})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "flywheel validate: %v\n", err)
 		os.Exit(1)

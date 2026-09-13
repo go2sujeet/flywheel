@@ -13,6 +13,7 @@ import (
 
 func init() {
 	register("run", "dispatch a worker for a task", runRun)
+	registerHelp("run", "flywheel run <task> [--dir DIR] [--worker NAME] [--model MODEL] [--resume] [--delta FILE] [--start-timeout DURATION]", func() *flag.FlagSet { fs, _ := runFlags(); return fs })
 }
 
 // runOptions holds the parsed `flywheel run` flags.
@@ -30,84 +31,18 @@ func runUsage(w io.Writer) {
 	fmt.Fprintln(w, "usage: flywheel run <task> [--dir DIR] [--worker NAME] [--model MODEL] [--resume] [--delta FILE] [--start-timeout DURATION]")
 }
 
-// parseRunArgs splits `flywheel run` arguments into the task and the flags,
-// accepting flags before or after the positional task.
-func parseRunArgs(args []string) (task string, opts runOptions, err error) {
-	opts.dir = "."
-	opts.startTimeout = 60 * time.Second
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		switch {
-		case a == "-h" || a == "--help":
-			return "", opts, flag.ErrHelp
-		case a == "-dir" || a == "--dir":
-			if i+1 >= len(args) {
-				return "", opts, fmt.Errorf("flag needs an argument: %s", a)
-			}
-			i++
-			opts.dir = args[i]
-		case a == "-worker" || a == "--worker":
-			if i+1 >= len(args) {
-				return "", opts, fmt.Errorf("flag needs an argument: %s", a)
-			}
-			i++
-			opts.worker = args[i]
-		case a == "-model" || a == "--model":
-			if i+1 >= len(args) {
-				return "", opts, fmt.Errorf("flag needs an argument: %s", a)
-			}
-			i++
-			opts.model = args[i]
-		case a == "-delta" || a == "--delta":
-			if i+1 >= len(args) {
-				return "", opts, fmt.Errorf("flag needs an argument: %s", a)
-			}
-			i++
-			opts.delta = args[i]
-		case a == "-start-timeout" || a == "--start-timeout":
-			if i+1 >= len(args) {
-				return "", opts, fmt.Errorf("flag needs an argument: %s", a)
-			}
-			i++
-			d, perr := time.ParseDuration(args[i])
-			if perr != nil {
-				return "", opts, fmt.Errorf("invalid --start-timeout %q: %v", args[i], perr)
-			}
-			opts.startTimeout = d
-		case a == "-resume" || a == "--resume":
-			opts.resume = true
-		case strings.HasPrefix(a, "--dir=") || strings.HasPrefix(a, "-dir="):
-			opts.dir = flagValue(a)
-		case strings.HasPrefix(a, "--worker=") || strings.HasPrefix(a, "-worker="):
-			opts.worker = flagValue(a)
-		case strings.HasPrefix(a, "--model=") || strings.HasPrefix(a, "-model="):
-			opts.model = flagValue(a)
-		case strings.HasPrefix(a, "--delta=") || strings.HasPrefix(a, "-delta="):
-			opts.delta = flagValue(a)
-		case strings.HasPrefix(a, "--start-timeout=") || strings.HasPrefix(a, "-start-timeout="):
-			d, perr := time.ParseDuration(flagValue(a))
-			if perr != nil {
-				return "", opts, fmt.Errorf("invalid --start-timeout %q: %v", flagValue(a), perr)
-			}
-			opts.startTimeout = d
-		case strings.HasPrefix(a, "-") && a != "-":
-			return "", opts, fmt.Errorf("flag provided but not defined: %s", a)
-		default:
-			if task != "" {
-				return "", opts, fmt.Errorf("unexpected argument %q", a)
-			}
-			task = a
-		}
-	}
-	if task == "" {
-		return "", opts, fmt.Errorf("exactly one task id is required")
-	}
-	return task, opts, nil
-}
-
-// flagValue returns the value after the first '=' in a flag argument.
-func flagValue(a string) string {
-	return a[strings.IndexByte(a, '=')+1:]
+// runFlags defines run's flags once, so help and run share them.
+func runFlags() (*flag.FlagSet, *runOptions) {
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	o := &runOptions{}
+	o.dir = *fs.String("dir", ".", "target directory")
+	o.worker = *fs.String("worker", "", "worker name")
+	o.model = *fs.String("model", "", "model name")
+	o.resume = *fs.Bool("resume", false, "resume the task's last session")
+	o.delta = *fs.String("delta", "", "delta brief file")
+	o.startTimeout = *fs.Duration("start-timeout", 60*time.Second, "startup timeout")
+	return fs, o
 }
 
 // runRun implements `flywheel run <task>`: dispatch the configured worker,
@@ -115,8 +50,16 @@ func flagValue(a string) string {
 // event. Exit codes: 0 clean stop, 3 start timeout, 4 failed run (nonzero rc,
 // capped, or error), 2 usage, 1 any other error.
 func runRun(args []string) {
-	task, opts, err := parseRunArgs(args)
-	if err != nil {
+	fs, o := runFlags()
+	var task string
+	var parseArgs []string
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		task = args[0]
+		parseArgs = args[1:]
+	} else {
+		parseArgs = args
+	}
+	if err := fs.Parse(parseArgs); err != nil {
 		if err == flag.ErrHelp {
 			runUsage(os.Stderr)
 			os.Exit(2)
@@ -125,9 +68,21 @@ func runRun(args []string) {
 		runUsage(os.Stderr)
 		os.Exit(2)
 	}
-	res, err := flywheel.Run(opts.dir, flywheel.RunOptions{
-		Task: task, Worker: opts.worker, Model: opts.model, Resume: opts.resume,
-		DeltaPath: opts.delta, StartTimeout: opts.startTimeout, Progress: os.Stdout,
+	if task == "" {
+		if fs.NArg() != 1 {
+			fmt.Fprintf(os.Stderr, "flywheel run: exactly one task id is required\n")
+			runUsage(os.Stderr)
+			os.Exit(2)
+		}
+		task = fs.Arg(0)
+	} else if fs.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "flywheel run: unexpected argument %q\n", fs.Arg(0))
+		runUsage(os.Stderr)
+		os.Exit(2)
+	}
+	res, err := flywheel.Run(o.dir, flywheel.RunOptions{
+		Task: task, Worker: o.worker, Model: o.model, Resume: o.resume,
+		DeltaPath: o.delta, StartTimeout: o.startTimeout, Progress: os.Stdout,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "flywheel run: %v\n", err)
