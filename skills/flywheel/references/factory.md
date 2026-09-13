@@ -36,9 +36,13 @@ The gauges are the CLI, not a model. These subcommands back the roles you hold t
 | `flywheel validate <task>` | the brief's `gate:` lines on the exact tree, checks `owns:` | 0 pass / 5 fail / 2 usage / 1 error | supervisor gauges |
 | `flywheel inspect <task> --verdict … --session …` | records an inspection verdict; refuses (exit 6) on T3/T4/T8 | 0 / 6 refusal / 2 / 1 | QC inspector |
 | `flywheel verify [<task>…\|--all] [--json]` | checks the event chain (T1/T3/T4/T5/T8) | 0 / 6 / 2 / 1 | external auditor |
+| `flywheel factory [--dir] [--once] [--json] [--interval 2s] [--width 100]` | renders the floor — workers (busy counts only live runs), one row per unit with its run state | 0 / 2 / 1 | every role reads it |
 
-Seeing the floor is the planned `flywheel factory` dashboard (#63); until it is in the CLI, ask
-the lead.
+`flywheel factory` renders the floor: workers with busy counts for live runs, one row per unit
+with its run state (waiting, exploring, stalled, capped), the andon signals, and the output tally.
+`--once` (or `--json`) prints and exits, so an agent never hangs. `flywheel factory` without
+`--once` is the live view in a terminal (and renders once when stdout is not a terminal); bare
+`flywheel` opens the same view.
 
 ## Independence rules
 
@@ -100,4 +104,4 @@ its part by hand.
 | External audit | the auditor persona, by hand | `flywheel verify --all` first pass (available); `flywheel audit` (#61) |
 | Traceability of units and sessions | the skills | `flywheel explain`, `flywheel context` (#58), `flywheel trace` (#62) |
 | Andon: signals stop checkpoint, land and handoff | the skills | signals and `flywheel feedback` (#37-#39) |
-| Seeing the floor | asking the lead | `flywheel factory` dashboard (#63) |
+| Seeing the floor | `flywheel factory` (available) | built-in: workers, units, andon, output |

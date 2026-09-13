@@ -153,6 +153,10 @@ files with no edits is `exploring`, not stuck — check its plan message before 
 ([references/worker-brief.md#3-run-states-and-failures](references/worker-brief.md#3-run-states-and-failures)).
 Never kill opencode processes by name.
 
+To check on running workers, read the floor with `flywheel factory --once` (or `--json` for
+machine use) instead of asking workers or reading run files by hand; its andon lists the units
+that need you (silent, stalled, capped, provider-error).
+
 ### 4. Review — judge evidence, never trust self-report
 - **Actual exit status** (`rc`): nonzero means the run failed to execute — investigate, don't
   proceed. Zero means it ran; it does **not** mean the task is correct.
