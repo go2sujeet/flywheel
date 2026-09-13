@@ -123,6 +123,29 @@ Role ≠ adapter: the role comes first; the cheapest head that can fill it is se
 tokens on the planner mid-session? The repo is the session — a new head reads the same files and
 continues. The loop never waits for a vendor.
 
+## Assigning personas
+
+Each persona is a skill; any agent (or a human) can load one. To give an agent a role:
+
+1. **Load that skill** into the agent — copy or install the persona's `SKILL.md` (and the factory
+   model it links to, `skills/flywheel/references/factory.md`).
+2. **Tell it its persona and session** — which role it plays, which repo or worktree is its
+   session, and who else is on the line (the lead, the foreman, the auditor) so it can find its
+   work and know what it must not do.
+
+The independence rules hold for every assignment: the **auditor** is never the same session as the
+lead, planner or inspector, and should be a different model or vendor; the **inspector** never
+inspects work from its own session; a **worker** never records gauge readings, inspections or
+audits. A session that is two personas at once may do either role's work, but never both on the
+same unit.
+
+Minimal staffing:
+- **One frontier lead** holding the planner, foreman, inspector and steward roles (the lead plans,
+  runs the line, inspects and triages learnings — the default at small scale).
+- **OpenCode workers** (the approved model) executing the work orders.
+- **A different model as auditor** — a separate session, ideally a different vendor, that audits
+  first articles and samples.
+
 ## Health
 
 ```bash
