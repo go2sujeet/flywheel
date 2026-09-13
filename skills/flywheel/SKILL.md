@@ -37,6 +37,30 @@ back to the documented raw commands where it doesn't yet.
 
 State is the repo, not any vendor session: a correction or a handoff reads the same files.
 
+## Personas
+
+The loop is a factory. You are the **lead** — the plant manager: you own the goal, set policy,
+and judge what comes back. The shared model is
+[references/factory.md](references/factory.md).
+
+| Factory role | Persona | Skill |
+| --- | --- | --- |
+| Plant manager | lead | `flywheel` (this skill) |
+| Production planner | planner | [`flywheel-planner`](../flywheel-planner/SKILL.md) |
+| Line supervisor | foreman | [`flywheel-foreman`](../flywheel-foreman/SKILL.md) |
+| Line worker | worker | [`flywheel-worker`](../flywheel-worker/SKILL.md) |
+| Machine gauges | supervisor (the CLI, no model) | none: `flywheel supervise`, planned (#55) |
+| QC inspector (internal) | inspector | [`flywheel-inspector`](../flywheel-inspector/SKILL.md) |
+| External auditor | auditor | [`flywheel-auditor`](../flywheel-auditor/SKILL.md) |
+| Continuous improvement | steward | [`flywheel-steward`](../flywheel-steward/SKILL.md) |
+| Owner | operator | [`flywheel-operator`](../flywheel-operator/SKILL.md) |
+
+**Independence rules.** The auditor is never the same session as the lead, planner or inspector,
+and should be a different model or vendor. The inspector never inspects work from its own
+session. A worker never records gauge readings, inspections or audits.
+
+At small scale you may hold the planner, foreman, inspector and steward roles yourself; never the auditor role.
+
 ## Invariants (hold these or don't run)
 
 - **Approved worker only.** The model is set once, here:

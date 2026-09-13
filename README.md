@@ -25,7 +25,14 @@ and checks are deterministic; the agents are interchangeable.
 ```
 cmd/flywheel/          CLI entry point (subcommand dispatch, flags)
 internal/flywheel/     core logic (init scaffold, state)
-skills/flywheel/       the skill: how to operate the loop (SKILL.md, references, evals)
+skills/flywheel/       the lead: operate the loop (SKILL.md, references, evals)
+skills/flywheel-planner/     production planner: write work orders, never dispatch
+skills/flywheel-foreman/     line supervisor: run a line of OpenCode workers
+skills/flywheel-worker/      line worker: execute one brief, report evidence
+skills/flywheel-inspector/   QC inspector: verdict on finished units
+skills/flywheel-auditor/     external auditor: audit first articles and samples
+skills/flywheel-steward/     continuous improvement: signals become learnings
+skills/flywheel-operator/    owner: install, configure, assign personas
 examples/              worked brief examples (gmail draft)
 .flywheel/             runtime state — gitignored here (this repo's dogfood state is scratch); consumer repos commit everything except runs/ (see skills/flywheel-operator/SKILL.md)
 ```
