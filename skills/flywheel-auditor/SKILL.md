@@ -63,8 +63,14 @@ unit — that is QC's call.
 
 ## Commands
 
-- `flywheel verify` — planned (#54); today: re-run the gauges in a clean worktree at the
-  recorded hash.
+- `flywheel verify [<task>...|--all] [--json]` — your **first pass**: mechanically check the
+  traveler against the poka-yoke rules (T1/T3/T4/T5/T8) across every task. Exit 0 when the chain
+  conforms, 6 when a check fails (the FAIL lines name rule and reason). Audit the whole log with
+  `--all`; use `--json` to consume the machine-readable result on a larger line.
+- `flywheel validate <task> --workdir <clean-worktree>` — re-measure at the recorded hash: run it from
+  the flywheel root (or with `--dir <flywheel-root>`). It re-runs the brief's `gate:` lines on the
+  clean tree and checks owns (exit 0 or 5), giving you a fresh supervisor reading rather than
+  trusting the line's recorded one.
 - `flywheel supervise` — planned (#55); today: read the run files directly.
 - `flywheel explain` / `flywheel context` — planned (#58); today: reconstruct the traveler from
   the briefs, run files and state.
