@@ -2,6 +2,8 @@
 
 package flywheel
 
+import "os"
+
 // EnableANSI reports whether stdout is a character device that will interpret
 // ANSI sequences. On non-Windows platforms an ANSI terminal needs no explicit
 // setup: if stdout is a character device, colour and cursor escapes render.
