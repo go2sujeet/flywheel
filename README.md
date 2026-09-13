@@ -83,7 +83,9 @@ flowchart TD
 
 | Command | Plane | What it does |
 | --- | --- | --- |
-| `flywheel init` | data | Scaffold `flywheel.md` + `.flywheel/state.json` + `.flywheel/briefs/` |
+| `flywheel init` | data | Scaffold `flywheel.md` + `.flywheel/state.json` + `.flywheel/events.jsonl` + `.flywheel/briefs/` |
+| `flywheel log` | data | Append an event to `.flywheel/events.jsonl` and re-derive state |
+| `flywheel state` | data | Derive and print state from the event log |
 | `flywheel version` | both | Print version |
 
 More subcommands (`run`, `status`, `retry`, `handoff`, ...) are being built by the loop itself —

@@ -19,7 +19,7 @@ func TestInitCreatesScaffold(t *testing.T) {
 		t.Fatalf("Init() = %q, want %q", got, dir)
 	}
 
-	for _, f := range []string{"flywheel.md", ".flywheel/state.json", ".flywheel/briefs"} {
+	for _, f := range []string{"flywheel.md", ".flywheel/state.json", ".flywheel/events.jsonl", ".flywheel/.gitignore", ".flywheel/briefs"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("Init() did not create %s: %v", f, err)
 		}
@@ -64,31 +64,31 @@ func TestInitStateJSONContract(t *testing.T) {
 		t.Fatalf("state.json is not valid JSON: %v", err)
 	}
 
-	for _, k := range []string{"version", "status", "tasks"} {
+	for _, k := range []string{"version", "updated_at", "tasks", "counts"} {
 		if _, ok := state[k]; !ok {
 			t.Errorf("state.json missing key %q (have %v)", k, keys(state))
 		}
 	}
-	if len(state) != 3 {
-		t.Errorf("state.json has %d keys, want exactly 3 (version, status, tasks)", len(state))
+	if len(state) != 4 {
+		t.Errorf("state.json has %d keys, want exactly 4 (version, updated_at, tasks, counts)", len(state))
 	}
 
 	var version float64
 	_ = json.Unmarshal(state["version"], &version)
-	if version != 1 {
-		t.Errorf("state.json version = %v, want 1", version)
-	}
-
-	var status string
-	_ = json.Unmarshal(state["status"], &status)
-	if status != "initialized" {
-		t.Errorf("state.json status = %q, want initialized", status)
+	if version != 2 {
+		t.Errorf("state.json version = %v, want 2", version)
 	}
 
 	var tasks []any
 	_ = json.Unmarshal(state["tasks"], &tasks)
 	if tasks == nil || len(tasks) != 0 {
 		t.Errorf("state.json tasks = %#v, want empty array", tasks)
+	}
+
+	var counts map[string]json.RawMessage
+	_ = json.Unmarshal(state["counts"], &counts)
+	if len(counts) != 0 {
+		t.Errorf("state.json counts = %v, want empty object", counts)
 	}
 }
 
@@ -175,7 +175,7 @@ func TestInitRefusesExistingStateWithoutMarkdown(t *testing.T) {
 	if err := json.Unmarshal(b, &state); err != nil {
 		t.Fatalf("state.json not valid JSON after force: %v", err)
 	}
-	if len(state) != 3 {
+	if len(state) != 4 {
 		t.Errorf("state.json not reset by force: %v", string(b))
 	}
 }
@@ -327,7 +327,7 @@ func TestInitForceResetsRegularFiles(t *testing.T) {
 	if err := json.Unmarshal(b, &state); err != nil {
 		t.Fatalf("state.json not valid JSON after force: %v", err)
 	}
-	if len(state) != 3 {
+	if len(state) != 4 {
 		t.Errorf("state.json not reset by force: %v", string(b))
 	}
 }
@@ -414,4 +414,61 @@ func keys(m map[string]json.RawMessage) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+func TestInitCreatesEventLogAndGitignore(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	eventsPath := filepath.Join(dir, ".flywheel", "events.jsonl")
+	gitignorePath := filepath.Join(dir, ".flywheel", ".gitignore")
+
+	b, err := os.ReadFile(eventsPath)
+	if err != nil {
+		t.Fatalf("read events.jsonl: %v", err)
+	}
+	if len(b) != 0 {
+		t.Errorf("events.jsonl = %q, want empty", b)
+	}
+
+	b, err = os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	if string(b) != "runs/\n" {
+		t.Errorf(".gitignore = %q, want runs/", b)
+	}
+}
+
+func TestInitForceLeavesExistingEventLogUntouched(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	eventsPath := filepath.Join(dir, ".flywheel", "events.jsonl")
+
+	// Simulate a real log with one appended event.
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T00:00:00Z", Task: "T1", Kind: "planned"}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	b, err := os.ReadFile(eventsPath)
+	if err != nil {
+		t.Fatalf("read events.jsonl: %v", err)
+	}
+	if len(b) == 0 {
+		t.Fatal("test setup: event log is empty")
+	}
+
+	if _, err := Init(dir, true); err != nil {
+		t.Fatalf("Init() --force error = %v", err)
+	}
+
+	b2, err := os.ReadFile(eventsPath)
+	if err != nil {
+		t.Fatalf("re-read events.jsonl: %v", err)
+	}
+	if string(b2) != string(b) {
+		t.Error("--force overwrote or truncated the event log")
+	}
 }
