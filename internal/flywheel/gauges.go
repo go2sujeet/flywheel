@@ -1,0 +1,368 @@
+package flywheel
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// ValidateOptions configures one validation pass.
+type ValidateOptions struct {
+	Dir     string // flywheel root; default "."
+	Workdir string // git working tree the gates run in; default Dir
+}
+
+// GateOut reports one gate run.
+type GateOut struct {
+	Gate        string
+	Command     string
+	RC          int
+	DurationMS  int64
+	LogPath     string
+	HostBlocked bool
+}
+
+// GaugeResult reports a full validation pass: the tree hash, one entry per
+// gate, and the paths found outside owns.
+type GaugeResult struct {
+	Tree    string
+	Attempt string
+	Gates   []GateOut
+	Outside []string
+	GatesOK bool
+	OwnsOK  bool
+}
+
+// OK reports whether the whole pass succeeds: every gate passed and nothing
+// sits outside owns.
+func (r GaugeResult) OK() bool {
+	return r.GatesOK && r.OwnsOK
+}
+
+// hostBlocked is the Windows Smart App Control message that intermittently
+// blocks a freshly built unsigned binary. It is a host problem, not a code
+// failure; the gate is rerun once before giving up.
+const hostBlocked = "An Application Control policy has blocked this file"
+
+// ValidateTask loads the task's planned brief, hashes the exact tree with a
+// throwaway git index, runs each declared gate with bash (cmd /C on Windows,
+// sh elsewhere), records one validated event per gate, checks the owns
+// boundary, and records an owns_checked event. The shared git index and
+// working tree are never touched.
+func ValidateTask(dir, task string, o ValidateOptions) (GaugeResult, error) {
+	if o.Dir == "" {
+		o.Dir = "."
+	}
+	wd := o.Workdir
+	if wd == "" {
+		wd = o.Dir
+	}
+	events, err := ReadEvents(o.Dir)
+	if err != nil {
+		return GaugeResult{}, err
+	}
+	briefPath := ""
+	attempt := ""
+	for _, e := range events {
+		if e.Task != task {
+			continue
+		}
+		if e.Kind == "planned" && e.Brief != "" {
+			briefPath = e.Brief
+		}
+		if e.Attempt != "" {
+			attempt = e.Attempt
+		}
+	}
+	if briefPath == "" {
+		return GaugeResult{}, fmt.Errorf("task %q has no planned event; record one with: flywheel log --task %s --kind planned --brief <path>", task, task)
+	}
+	if !filepath.IsAbs(briefPath) {
+		briefPath = filepath.Join(o.Dir, briefPath)
+	}
+	header, err := ParseBriefHeader(briefPath)
+	if err != nil {
+		return GaugeResult{}, fmt.Errorf("parse brief %s: %w", briefPath, err)
+	}
+	if len(header.Gates) == 0 {
+		return GaugeResult{}, fmt.Errorf("brief %s declares no gate: lines; add a `gate:` line to the brief header", briefPath)
+	}
+	if attempt == "" {
+		attempt = "r1"
+	}
+	tree, err := treeHash(wd)
+	if err != nil {
+		return GaugeResult{}, err
+	}
+	evDir := filepath.Join(o.Dir, ".flywheel", "evidence", task, attempt)
+	if err := os.MkdirAll(evDir, 0o755); err != nil {
+		return GaugeResult{}, fmt.Errorf("create %s: %w", evDir, err)
+	}
+
+	var res GaugeResult
+	res.Tree = tree
+	res.Attempt = attempt
+	res.GatesOK = true
+
+	for i, gate := range header.Gates {
+		n := strconv.Itoa(i + 1)
+		logRel := ".flywheel/evidence/" + task + "/" + attempt + "/gate-" + n + ".log"
+		logPath := filepath.Join(o.Dir, logRel)
+		rc, dur, out, err := runGate(wd, gate)
+		if err != nil {
+			return GaugeResult{}, err
+		}
+		blocked := strings.Contains(string(out), hostBlocked)
+		if blocked {
+			rc2, dur2, out2, err2 := runGate(wd, gate)
+			if err2 != nil {
+				return GaugeResult{}, err2
+			}
+			rc, dur, out = rc2, dur2, out2
+			blocked = strings.Contains(string(out), hostBlocked)
+		}
+		if err := os.WriteFile(logPath, out, 0o644); err != nil {
+			return GaugeResult{}, fmt.Errorf("write %s: %w", logPath, err)
+		}
+		sum := sha256.Sum256(out)
+		rcPtr := new(int)
+		*rcPtr = rc
+		ev := Event{
+			TS: "", Task: task, Kind: "validated", Attempt: attempt,
+			Gate: n, Command: gate, Tree: tree, RC: rcPtr,
+			DurationMS: dur, SHA256: hex.EncodeToString(sum[:]), Path: logRel,
+			Persona: "supervisor",
+		}
+		if blocked {
+			ev.Reason = "host-blocked"
+		}
+		if err := AppendEvent(o.Dir, ev); err != nil {
+			return GaugeResult{}, err
+		}
+		res.Gates = append(res.Gates, GateOut{
+			Gate: n, Command: gate, RC: rc, DurationMS: dur,
+			LogPath: logRel, HostBlocked: blocked,
+		})
+		if rc != 0 || blocked {
+			res.GatesOK = false
+		}
+	}
+	return finishValidate(o.Dir, wd, task, attempt, tree, header.Owns, res)
+}
+
+// finishValidate runs the owns check, records owns_checked, refreshes derived
+// state, and returns the result.
+func finishValidate(dir, wd, task, attempt, tree string, owns []string, res GaugeResult) (GaugeResult, error) {
+	changed, err := changedPaths(wd)
+	if err != nil {
+		return GaugeResult{}, err
+	}
+	var outside []string
+	for _, p := range changed {
+		if !ownsContains(owns, p) {
+			outside = append(outside, p)
+		}
+	}
+	res.Outside = outside
+	res.OwnsOK = len(outside) == 0
+	if err := AppendEvent(dir, Event{
+		TS: "", Task: task, Kind: "owns_checked", Attempt: attempt,
+		Tree: tree, Outside: outside, Persona: "supervisor",
+	}); err != nil {
+		return GaugeResult{}, err
+	}
+	_, _ = WriteState(dir)
+	return res, nil
+}
+
+// treeHash returns the SHA-1 tree id of wd computed with a temporary index
+// file, so the shared git index is never mutated: git read-tree HEAD, git
+// add -A, git write-tree, then the temp index is removed.
+func treeHash(wd string) (string, error) {
+	tmp, err := os.CreateTemp("", "fw-index-*")
+	if err != nil {
+		return "", fmt.Errorf("create temp index: %w", err)
+	}
+	idx := tmp.Name()
+	tmp.Close()
+	os.Remove(idx)
+	defer os.Remove(idx)
+	if _, err := gitRun(wd, idx, []string{"read-tree", "HEAD"}); err != nil {
+		return "", err
+	}
+	if _, err := gitRun(wd, idx, []string{"add", "-A"}); err != nil {
+		return "", err
+	}
+	// flywheel's own bookkeeping (flywheel.md and .flywheel/) is never part of
+	// a unit's tree: validate writes evidence and refreshes state after
+	// measuring, so including them would change the hash between validate and
+	// inspect and no reading could ever match its tree.
+	if _, err := gitRun(wd, idx, []string{"rm", "-r", "--cached", "--ignore-unmatch", "--", ".flywheel", "flywheel.md"}); err != nil {
+		return "", err
+	}
+	out, err := gitRun(wd, idx, []string{"write-tree"})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// gitRun runs git with the throwaway index, returning stdout only. Its stdout
+// is data (write-tree); stderr is kept for error messages. A failing git call
+// surfaces as an error naming the command.
+func gitRun(wd, idx string, args []string) (string, error) {
+	rc, stdout, stderr, err := runCmdSplit(wd, gitArgs(args), append(os.Environ(), "GIT_INDEX_FILE="+idx))
+	if err != nil {
+		return "", fmt.Errorf("git %v: %w", args, err)
+	}
+	if rc != 0 {
+		return "", fmt.Errorf("git %v failed (rc=%d): %s", args, rc, strings.TrimSpace(string(append(stderr, stdout...))))
+	}
+	return string(stdout), nil
+}
+
+// gitArgs prefixes git onto a subcommand's arguments.
+func gitArgs(args []string) []string {
+	argv := make([]string, 0, len(args)+1)
+	argv = append(argv, "git")
+	for _, a := range args {
+		argv = append(argv, a)
+	}
+	return argv
+}
+
+// runGate runs one gate command through bash -c when bash is on PATH, cmd /C
+// on Windows, or sh -c elsewhere. It returns the exit code, elapsed time and
+// combined output; a spawn failure (not an exit) is an error.
+func runGate(wd, command string) (rc int, durMS int64, out []byte, err error) {
+	var argv []string
+	if _, berr := exec.LookPath("bash"); berr == nil {
+		argv = []string{"bash", "-c", command}
+	} else if runtime.GOOS == "windows" {
+		argv = []string{"cmd", "/C", command}
+	} else {
+		argv = []string{"sh", "-c", command}
+	}
+	t0 := time.Now()
+	grc, gout, gerr := runCmd(wd, argv, nil)
+	dur := time.Since(t0).Milliseconds()
+	if gerr != nil {
+		return 0, dur, nil, gerr
+	}
+	return grc, dur, gout, nil
+}
+
+// runCmd runs argv in wd with the given environment (nil inherits the caller's
+// environment) and returns the exit code and mixed output. Gates keep combined
+// output because that is their log; data-bearing git commands use runCmdSplit.
+// A spawn failure surfaces as an error.
+func runCmd(wd string, argv, env []string) (rc int, out []byte, err error) {
+	rc, stdout, stderr, err := runCmdSplit(wd, argv, env)
+	if err != nil {
+		return rc, nil, err
+	}
+	return rc, append(stdout, stderr...), nil
+}
+
+// runCmdSplit runs argv in wd and returns the exit code and stdout and stderr
+// separately, so git commands whose stdout is data can ignore stderr chatter
+// (for example git's "LF will be replaced by CRLF" warning on Windows with
+// core.autocrlf). A spawn failure surfaces as an error.
+func runCmdSplit(wd string, argv, env []string) (rc int, stdout, stderr []byte, err error) {
+	cmd := exec.Command(argv[0])
+	cmd.Args = argv
+	cmd.Dir = wd
+	if env != nil {
+		cmd.Env = env
+	}
+	var outBuf bytes.Buffer
+	var errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	if err := cmd.Start(); err != nil {
+		return 0, nil, nil, fmt.Errorf("start %v: %w", argv, err)
+	}
+	// Wait returns an error on a nonzero exit; the exit code is read from
+	// ProcessState, so the error is expected and ignored.
+	_ = cmd.Wait()
+	rc = 0
+	if cmd.ProcessState != nil {
+		rc = cmd.ProcessState.ExitCode()
+	}
+	return rc, outBuf.Bytes(), errBuf.Bytes(), nil
+}
+
+// changedPaths lists every path that differs from HEAD plus untracked files,
+// using read-only git commands. Paths are normalised to forward slashes.
+func changedPaths(wd string) ([]string, error) {
+	var paths []string
+	diff, err := gitRead(wd, []string{"diff", "--name-only", "HEAD"})
+	if err != nil {
+		return nil, err
+	}
+	untracked, err := gitRead(wd, []string{"ls-files", "--others", "--exclude-standard"})
+	if err != nil {
+		return nil, err
+	}
+	for _, line := range strings.Split(diff, "\n") {
+		if p := strings.TrimSpace(line); p != "" {
+			paths = append(paths, filepath.ToSlash(p))
+		}
+	}
+	for _, line := range strings.Split(untracked, "\n") {
+		if p := strings.TrimSpace(line); p != "" {
+			paths = append(paths, filepath.ToSlash(p))
+		}
+	}
+	return paths, nil
+}
+
+// gitRead runs a read-only git command and returns its stdout, or an error if
+// the command fails. Stdout is data (diff, ls-files); stderr chatter is never
+// parsed as paths.
+func gitRead(wd string, args []string) (string, error) {
+	rc, stdout, stderr, err := runCmdSplit(wd, gitArgs(args), nil)
+	if err != nil {
+		return "", fmt.Errorf("git %v: %w", args, err)
+	}
+	if rc != 0 {
+		return "", fmt.Errorf("git %v failed (rc=%d): %s", args, rc, strings.TrimSpace(string(append(stderr, stdout...))))
+	}
+	return string(stdout), nil
+}
+
+// ownsContains reports whether a changed path is inside the owns boundary.
+// flywheel's own files (flywheel.md at the root and anything under .flywheel/)
+// are never outside. A path is inside when it equals an owns entry, or starts
+// with an entry ending in '/', or matches an entry as a shell pattern.
+func ownsContains(owns []string, p string) bool {
+	p = filepath.ToSlash(p)
+	if p == "flywheel.md" {
+		return true
+	}
+	if p == ".flywheel" || strings.HasPrefix(p, ".flywheel/") {
+		return true
+	}
+	for _, o := range owns {
+		o = filepath.ToSlash(o)
+		if o == p {
+			return true
+		}
+		if strings.HasSuffix(o, "/") && strings.HasPrefix(p, o) {
+			return true
+		}
+		if m, _ := path.Match(o, p); m {
+			return true
+		}
+	}
+	return false
+}

@@ -24,40 +24,49 @@ type Tokens struct {
 // Event is one JSON object per line in .flywheel/events.jsonl. The event log
 // is the source of truth; state.json and flywheel.md are derived from it.
 type Event struct {
-	TS      string   `json:"ts"`
-	Task    string   `json:"task"`
-	Kind    string   `json:"kind"`
-	Session string   `json:"session,omitempty"`
-	Model   string   `json:"model,omitempty"`
-	Attempt string   `json:"attempt,omitempty"`
-	RC      *int     `json:"rc,omitempty"`
-	Reason  string   `json:"reason,omitempty"`
-	Verdict string   `json:"verdict,omitempty"`
-	Brief   string   `json:"brief,omitempty"`
-	Needs   []string `json:"needs,omitempty"`
-	Owns    []string `json:"owns,omitempty"`
-	Commit  string   `json:"commit,omitempty"`
-	Note    string   `json:"note,omitempty"`
-	Adapter string   `json:"adapter,omitempty"`
-	Path    string   `json:"path,omitempty"`
-	SHA256  string   `json:"sha256,omitempty"`
-	Tokens  *Tokens  `json:"tokens,omitempty"`
-	Cost    float64  `json:"cost,omitempty"`
-	Steps   int      `json:"steps,omitempty"`
+	TS         string   `json:"ts"`
+	Task       string   `json:"task"`
+	Kind       string   `json:"kind"`
+	Session    string   `json:"session,omitempty"`
+	Model      string   `json:"model,omitempty"`
+	Attempt    string   `json:"attempt,omitempty"`
+	RC         *int     `json:"rc,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
+	Verdict    string   `json:"verdict,omitempty"`
+	Brief      string   `json:"brief,omitempty"`
+	Needs      []string `json:"needs,omitempty"`
+	Owns       []string `json:"owns,omitempty"`
+	Commit     string   `json:"commit,omitempty"`
+	Note       string   `json:"note,omitempty"`
+	Adapter    string   `json:"adapter,omitempty"`
+	Path       string   `json:"path,omitempty"`
+	SHA256     string   `json:"sha256,omitempty"`
+	Tokens     *Tokens  `json:"tokens,omitempty"`
+	Cost       float64  `json:"cost,omitempty"`
+	Steps      int      `json:"steps,omitempty"`
+	Tree       string   `json:"tree,omitempty"`
+	Gate       string   `json:"gate,omitempty"`
+	Command    string   `json:"command,omitempty"`
+	DurationMS int64    `json:"duration_ms,omitempty"`
+	Outside    []string `json:"outside,omitempty"`
+	Persona    string   `json:"persona,omitempty"`
 }
 
 // kinds is the set of event kinds understood by Derive.
 var kinds = map[string]bool{
-	"planned":     true,
-	"dispatched":  true,
-	"started":     true,
-	"worker_plan": true,
-	"finished":    true,
-	"report":      true,
-	"reviewed":    true,
-	"blocked":     true,
-	"landed":      true,
-	"amended":     true,
+	"planned":      true,
+	"dispatched":   true,
+	"started":      true,
+	"worker_plan":  true,
+	"finished":     true,
+	"report":       true,
+	"reviewed":     true,
+	"blocked":      true,
+	"landed":       true,
+	"amended":      true,
+	"validated":    true,
+	"owns_checked": true,
+	"inspected":    true,
 }
 
 // isTaskChar reports whether c is allowed in a task id: ^[A-Za-z0-9._-]+$.
@@ -99,13 +108,19 @@ func Validate(e Event) error {
 		return fmt.Errorf("event task %q does not match ^[A-Za-z0-9._-]+$", e.Task)
 	}
 	if !kinds[e.Kind] {
-		return fmt.Errorf("event kind %q is not one of planned, dispatched, started, worker_plan, finished, report, reviewed, blocked, landed, amended", e.Kind)
+		return fmt.Errorf("event kind %q is not one of planned, dispatched, started, worker_plan, finished, report, reviewed, blocked, landed, amended, validated, owns_checked, inspected", e.Kind)
 	}
 	if e.Attempt != "" && !attemptOK(e.Attempt) {
 		return fmt.Errorf("event attempt %q does not match ^[rc][0-9]+$", e.Attempt)
 	}
 	if e.Kind == "reviewed" && e.Verdict != "pass" && e.Verdict != "correct" && e.Verdict != "reject" {
 		return fmt.Errorf("reviewed event must carry verdict pass, correct, or reject (got %q)", e.Verdict)
+	}
+	if e.Kind == "inspected" && e.Verdict != "pass" && e.Verdict != "rework" && e.Verdict != "scrap" && e.Verdict != "escalate" {
+		return fmt.Errorf("inspected event must carry verdict pass, rework, scrap, or escalate (got %q)", e.Verdict)
+	}
+	if e.Kind == "validated" && (e.Gate == "" || e.Tree == "") {
+		return fmt.Errorf("validated event must carry gate and tree")
 	}
 	return nil
 }

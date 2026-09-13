@@ -320,3 +320,66 @@ func TestWriteStateCreatesMarkdownWhenMissing(t *testing.T) {
 		t.Errorf("status block missing T1 row:\n%q", content)
 	}
 }
+
+func TestDeriveInspectedStatusMapping(t *testing.T) {
+	events := []Event{
+		{TS: "2026-09-13T00:00:00Z", Task: "T-pass", Kind: "inspected", Verdict: "pass"},
+		{TS: "2026-09-13T00:00:00Z", Task: "T-rework", Kind: "inspected", Verdict: "rework"},
+		{TS: "2026-09-13T00:00:00Z", Task: "T-scrap", Kind: "inspected", Verdict: "scrap"},
+		{TS: "2026-09-13T00:00:00Z", Task: "T-escalate", Kind: "inspected", Verdict: "escalate"},
+	}
+	st := Derive(events)
+	for id, want := range map[string]string{
+		"T-pass":     "passed",
+		"T-rework":   "needs-correction",
+		"T-scrap":    "rejected",
+		"T-escalate": "blocked",
+	} {
+		ts, ok := findTask(st, id)
+		if !ok {
+			t.Errorf("task %s missing from derived state", id)
+			continue
+		}
+		if ts.Status != want {
+			t.Errorf("%s status = %q, want %q", id, ts.Status, want)
+		}
+	}
+}
+
+func TestDeriveValidatedOwnsCheckedKeepStatus(t *testing.T) {
+	events := []Event{
+		{TS: "2026-09-13T00:00:00Z", Task: "T1", Kind: "finished"},
+		{TS: "2026-09-13T00:00:01Z", Task: "T1", Kind: "validated", Gate: "1", Tree: "abc123"},
+		{TS: "2026-09-13T00:00:02Z", Task: "T1", Kind: "owns_checked", Tree: "abc123"},
+	}
+	st := Derive(events)
+	ts, ok := findTask(st, "T1")
+	if !ok {
+		t.Fatal("T1 missing from derived state")
+	}
+	if ts.Status != "finished" {
+		t.Errorf("T1 status = %q, want finished (validated/owns_checked must not change status)", ts.Status)
+	}
+}
+
+func TestDeriveOrderingGaugeKinds(t *testing.T) {
+	// finished, validated, owns_checked and inspected share one second-precision
+	// TS; appended in reverse order they must still derive passed.
+	events := []Event{
+		{TS: "2026-09-13T00:00:00Z", Task: "T1", Kind: "inspected", Verdict: "pass"},
+		{TS: "2026-09-13T00:00:00Z", Task: "T1", Kind: "owns_checked", Tree: "abc123"},
+		{TS: "2026-09-13T00:00:00Z", Task: "T1", Kind: "validated", Gate: "1", Tree: "abc123"},
+		{TS: "2026-09-13T00:00:00Z", Task: "T1", Kind: "finished"},
+	}
+	st := Derive(events)
+	ts, ok := findTask(st, "T1")
+	if !ok {
+		t.Fatal("T1 missing from derived state")
+	}
+	if ts.Status != "passed" {
+		t.Errorf("T1 status = %q, want passed (inspected must win over finished)", ts.Status)
+	}
+	if ts.Attempts != 0 {
+		t.Errorf("T1 attempts = %d, want 0", ts.Attempts)
+	}
+}
