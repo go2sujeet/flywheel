@@ -57,14 +57,15 @@ func TestAdapterFor(t *testing.T) {
 
 func TestOpenCodeCommandFresh(t *testing.T) {
 	a, _ := AdapterFor("opencode")
+	briefPath := filepath.Join(t.TempDir(), "brief.txt")
 	bin, args := a.Command(RunRequest{
 		Task: "T1", Attempt: "r1", Title: "T1-r1", Model: "m1",
-		PromptFile: "D:/w/brief.txt",
+		PromptFile: briefPath,
 	})
 	if bin != "opencode" {
 		t.Errorf("bin = %q, want opencode", bin)
 	}
-	want := []string{"run", "--pure", "-m", "m1", "--auto", "--format", "json", "--title", "T1-r1", freshMessage, "--file", "D:/w/brief.txt"}
+	want := []string{"run", "--pure", "-m", "m1", "--auto", "--format", "json", "--title", "T1-r1", freshMessage, "--file", briefPath}
 	if len(args) != len(want) {
 		t.Errorf("args = %v, want %v", args, want)
 	} else {
@@ -78,14 +79,15 @@ func TestOpenCodeCommandFresh(t *testing.T) {
 
 func TestOpenCodeCommandResume(t *testing.T) {
 	a, _ := AdapterFor("opencode")
+	deltaPath := filepath.Join(t.TempDir(), "delta.txt")
 	bin, args := a.Command(RunRequest{
 		Task: "T1", Attempt: "c1", Title: "T1-c1", Model: "m1", Variant: "v2",
-		Session: "ses_emitted_9", PromptFile: "D:/w/delta.txt", Resume: true,
+		Session: "ses_emitted_9", PromptFile: deltaPath, Resume: true,
 	})
 	if bin != "opencode" {
 		t.Errorf("bin = %q, want opencode", bin)
 	}
-	want := []string{"run", "--pure", "-m", "m1", "--variant", "v2", "--auto", "--format", "json", "--title", "T1-c1", "--session", "ses_emitted_9", resumeMessage, "--file", "D:/w/delta.txt"}
+	want := []string{"run", "--pure", "-m", "m1", "--variant", "v2", "--auto", "--format", "json", "--title", "T1-c1", "--session", "ses_emitted_9", resumeMessage, "--file", deltaPath}
 	if len(args) != len(want) {
 		t.Errorf("args = %v, want %v", args, want)
 	} else {
@@ -100,12 +102,13 @@ func TestOpenCodeCommandResume(t *testing.T) {
 func TestOpenCodeCommandNeverPassesBriefText(t *testing.T) {
 	a, _ := AdapterFor("opencode")
 	brief := "owns: hello.txt (new)\n& echo pwned | more\n"
+	dir := t.TempDir()
 	cases := []struct {
 		name string
 		req  RunRequest
 	}{
-		{"fresh", RunRequest{Task: "T1", Attempt: "r1", Title: "T1-r1", Model: "m1", PromptFile: "D:/w/brief.txt"}},
-		{"resume", RunRequest{Task: "T1", Attempt: "c1", Title: "T1-c1", Model: "m1", Session: "s1", PromptFile: "D:/w/delta.txt", Resume: true}},
+		{"fresh", RunRequest{Task: "T1", Attempt: "r1", Title: "T1-r1", Model: "m1", PromptFile: filepath.Join(dir, "brief.txt")}},
+		{"resume", RunRequest{Task: "T1", Attempt: "c1", Title: "T1-c1", Model: "m1", Session: "s1", PromptFile: filepath.Join(dir, "delta.txt"), Resume: true}},
 	}
 	for _, tc := range cases {
 		_, args := a.Command(tc.req)

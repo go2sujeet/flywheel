@@ -46,6 +46,12 @@ func shaOf(path string, t *testing.T) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// normLF normalises \r\n to \n so fixture bytes compare equal on CRLF
+// checkouts.
+func normLF(b []byte) string {
+	return strings.ReplaceAll(string(b), "\r\n", "\n")
+}
+
 func TestRunSimClean(t *testing.T) {
 	dir := setupTask(t)
 	model := fixturePath("clean.jsonl", t)
@@ -125,8 +131,10 @@ func TestRunSimClean(t *testing.T) {
 		t.Errorf("finished sha256 = %q, want run file %q", f.SHA256, runSHA)
 	}
 
-	// The run file reproduces the fixture byte-for-byte; plan and report hold
-	// the recorded texts.
+	// The run file reproduces the fixture modulo line endings: on a CRLF
+	// checkout the fixture is checked out with \r\n while the runner writes
+	// LF, so normalise both sides before comparing. Plan and report hold the
+	// recorded texts.
 	runB, err := os.ReadFile(filepath.Join(dir, ".flywheel", "runs", "T1.r1.jsonl"))
 	if err != nil {
 		t.Fatalf("read run file: %v", err)
@@ -135,8 +143,8 @@ func TestRunSimClean(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	if string(runB) != string(fixtureB) {
-		t.Error("run file does not reproduce the fixture byte-for-byte")
+	if normLF(runB) != normLF(fixtureB) {
+		t.Error("run file does not reproduce the fixture (after line-ending normalisation)")
 	}
 	planB, err := os.ReadFile(filepath.Join(dir, ".flywheel", "runs", "T1.r1.plan.md"))
 	if err != nil {
