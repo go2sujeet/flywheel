@@ -88,9 +88,13 @@ func verifyTask(dir, task string, events []Event) []VerifyItem {
 	return items
 }
 
-// ruleT1 checks that each dispatched event's sha256 equals the brief's SHA-256
+// ruleT1 checks that each dispatched event's sha256 matches the prompt it was
+// dispatched with. A fresh attempt (r*) must match the planned brief's SHA-256
 // at that time, unless an amended event came in between (compare with the
-// current brief when it is the last change).
+// current brief when it is the last change). A correction attempt (c*) must
+// match the delta file its dispatched.Brief names: a missing path or file and
+// a tampered delta all fail naming the delta, and amendments never waive a
+// correction's hash check.
 func ruleT1(dir, task string, events []Event) []VerifyItem {
 	planned := ""
 	for _, e := range events {
@@ -98,35 +102,70 @@ func ruleT1(dir, task string, events []Event) []VerifyItem {
 			planned = e.Brief
 		}
 	}
-	if planned == "" {
-		return []VerifyItem{{Task: task, Rule: "T1", Pass: true, Reason: "no planned brief to check"}}
-	}
-	if !filepath.IsAbs(planned) {
-		planned = filepath.Join(dir, planned)
-	}
-	b, err := os.ReadFile(planned)
-	if err != nil {
-		return []VerifyItem{{Task: task, Rule: "T1", Pass: false, Reason: fmt.Sprintf("read brief: %v", err)}}
-	}
-	cur := sha256.Sum256(b)
-	curHex := hex.EncodeToString(cur[:])
 	var items []VerifyItem
+	if planned != "" {
+		briefPath := planned
+		if !filepath.IsAbs(briefPath) {
+			briefPath = filepath.Join(dir, briefPath)
+		}
+		b, err := os.ReadFile(briefPath)
+		if err != nil {
+			items = append(items, VerifyItem{Task: task, Rule: "T1", Pass: false, Reason: fmt.Sprintf("read brief: %v", err)})
+		} else {
+			cur := sha256.Sum256(b)
+			curHex := hex.EncodeToString(cur[:])
+			for _, e := range events {
+				if e.Task != task || e.Kind != "dispatched" || e.SHA256 == "" || isCorrection(e.Attempt) {
+					continue
+				}
+				if amendedBetween(events, task, e.TS) {
+					continue // an amendment explains the change; compare when it is the last change
+				}
+				if e.SHA256 != curHex {
+					items = append(items, VerifyItem{Task: task, Rule: "T1", Pass: false,
+						Reason: fmt.Sprintf("dispatched sha256 %s does not match current brief %s", short(e.SHA256), short(curHex))})
+				}
+			}
+		}
+	}
+	// Corrections hash their own delta: the path recorded at dispatch, read
+	// back and compared now. Amendments to the planned brief never explain
+	// away a tampered or missing delta.
 	for _, e := range events {
-		if e.Task != task || e.Kind != "dispatched" || e.SHA256 == "" {
+		if e.Task != task || e.Kind != "dispatched" || e.SHA256 == "" || !isCorrection(e.Attempt) {
 			continue
 		}
-		if amendedBetween(events, task, e.TS) {
-			continue // an amendment explains the change; compare when it is the last change
+		if e.Brief == "" {
+			items = append(items, VerifyItem{Task: task, Rule: "T1", Pass: false,
+				Reason: fmt.Sprintf("dispatched %s records no delta path in brief", e.Attempt)})
+			continue
 		}
+		delta := e.Brief
+		if !filepath.IsAbs(delta) {
+			delta = filepath.Join(dir, delta)
+		}
+		b, err := os.ReadFile(delta)
+		if err != nil {
+			items = append(items, VerifyItem{Task: task, Rule: "T1", Pass: false,
+				Reason: fmt.Sprintf("read delta %s: %v", e.Brief, err)})
+			continue
+		}
+		cur := sha256.Sum256(b)
+		curHex := hex.EncodeToString(cur[:])
 		if e.SHA256 != curHex {
 			items = append(items, VerifyItem{Task: task, Rule: "T1", Pass: false,
-				Reason: fmt.Sprintf("dispatched sha256 %s does not match current brief %s", short(e.SHA256), short(curHex))})
+				Reason: fmt.Sprintf("dispatched %s sha256 %s does not match delta %s", e.Attempt, short(e.SHA256), short(curHex))})
 		}
 	}
 	if len(items) == 0 {
 		return []VerifyItem{{Task: task, Rule: "T1", Pass: true, Reason: "every dispatched event matches its brief"}}
 	}
 	return items
+}
+
+// isCorrection reports whether an attempt id is a correction attempt (c*).
+func isCorrection(attempt string) bool {
+	return len(attempt) >= 2 && attempt[0] == 'c'
 }
 
 // amendedBetween reports whether an amended event for task occurred after ts.

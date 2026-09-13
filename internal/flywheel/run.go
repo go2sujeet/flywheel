@@ -167,6 +167,7 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 	if err != nil {
 		return Result{}, err
 	}
+	promptBriefField := promptBrief(dir, promptSrc)
 	promptB, err := os.ReadFile(promptSrc)
 	if err != nil {
 		return Result{}, fmt.Errorf("read prompt %s: %w", promptSrc, err)
@@ -194,7 +195,7 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 	if err := AppendEvent(dir, Event{
 		TS: "", Task: o.Task, Kind: "dispatched", Attempt: attempt,
 		Adapter: worker.Adapter, Model: model, Path: runRel, SHA256: promptSHA,
-		Note: "policy sha256=" + policySHA,
+		Brief: promptBriefField, Note: "policy sha256=" + policySHA,
 	}); err != nil {
 		return Result{}, err
 	}
@@ -208,10 +209,13 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 	var cmd *exec.Cmd
 	var fixture *os.File
 	var watchdog *time.Timer
+	var startNote string
 
 	// Every path after dispatched records a finished event: if the function
 	// returns an error, close the run's files, kill a still-running child and
-	// record finished {reason: "error", note: <the error>}.
+	// record finished {reason: "error", note: <the error>}. A process that
+	// failed to start records {reason: "start-failed", note: <the start
+	// diagnostic>} instead: it never completed a step.
 	defer func() {
 		if err == nil {
 			return
@@ -233,8 +237,14 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 			_ = cmd.Wait()
 		}
 		runSHA := hex.EncodeToString(hasher.Sum(nil))
-		if aerr := AppendEvent(dir, Event{TS: "", Task: o.Task, Kind: "finished", Attempt: attempt, Reason: "error", Note: err.Error(), SHA256: runSHA}); aerr == nil {
-			progress(o.Progress, o.Task+" "+attempt+" finished rc=1 reason=error note="+err.Error())
+		reason := "error"
+		note := err.Error()
+		if startNote != "" {
+			reason = "start-failed"
+			note = startNote
+		}
+		if aerr := AppendEvent(dir, Event{TS: "", Task: o.Task, Kind: "finished", Attempt: attempt, Reason: reason, Note: note, SHA256: runSHA}); aerr == nil {
+			progress(o.Progress, o.Task+" "+attempt+" finished rc=1 reason="+reason+" note="+note)
 		}
 		_, _ = WriteState(dir)
 	}()
@@ -282,6 +292,7 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 		}
 		cmd.Stderr = errFile
 		if err := cmd.Start(); err != nil {
+			startNote = clipNote(fmt.Sprintf("start %s: %v", bin, err))
 			return Result{}, fmt.Errorf("start %s: %w", bin, err)
 		}
 		killChild = func() {
@@ -454,9 +465,17 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 		progress(o.Progress, o.Task+" "+attempt+" report recorded")
 	}
 
+	// A worker that exits before any completed step is start-failed: record
+	// the first nonempty stderr line (trimmed, at most 200 characters) as the
+	// note. Provider errors keep the "error" reason and a silent run already
+	// returned above.
+	note := ""
 	reason := lastReason
 	if seenError {
 		reason = "error"
+	} else if steps == 0 {
+		reason = "start-failed"
+		note = firstStderrLine(filepath.Join(runsDir, o.Task+"."+attempt+".err"))
 	}
 	rcPtr := new(int)
 	*rcPtr = rc
@@ -465,7 +484,7 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 	runSHA := hex.EncodeToString(hasher.Sum(nil))
 	if err := AppendEvent(dir, Event{
 		TS: "", Task: o.Task, Kind: "finished", Session: session, Attempt: attempt,
-		RC: rcPtr, Reason: reason, Steps: steps, Tokens: tokPtr, Cost: cost, SHA256: runSHA,
+		RC: rcPtr, Reason: reason, Note: note, Steps: steps, Tokens: tokPtr, Cost: cost, SHA256: runSHA,
 	}); err != nil {
 		return Result{}, err
 	}
@@ -509,6 +528,50 @@ func promptSource(dir, brief, delta, task string, resume bool) (string, error) {
 		src = filepath.Join(dir, src)
 	}
 	return filepath.Abs(src)
+}
+
+// promptBrief returns the prompt path to record in dispatched.Brief: a
+// repo-relative slash path when the prompt lives inside dir, otherwise the
+// absolute external path unchanged.
+func promptBrief(dir, src string) string {
+	if abs, aerr := filepath.Abs(dir); aerr == nil {
+		if rel, err := filepath.Rel(abs, src); err == nil {
+			rel = filepath.ToSlash(rel)
+			if rel != ".." && !strings.HasPrefix(rel, "../") {
+				return rel
+			}
+		}
+	}
+	return src
+}
+
+// clipNote trims s and caps it at 200 characters for a finished note.
+func clipNote(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > 200 {
+		return s[:200]
+	}
+	return s
+}
+
+// firstStderrLine returns the first nonempty line of the stderr file at path,
+// trimmed and capped at 200 characters, or "" when the file is missing or
+// empty.
+func firstStderrLine(path string) string {
+	f, err := os.OpenFile(path, os.O_RDONLY, 0)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line != "" {
+			return clipNote(line)
+		}
+	}
+	return ""
 }
 
 // workerPolicySHA writes the embedded OpenCode permission policy to

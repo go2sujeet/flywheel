@@ -104,6 +104,9 @@ func TestRunSimClean(t *testing.T) {
 		d.SHA256 != hex.EncodeToString(briefSum[:]) {
 		t.Errorf("dispatched event = %v", d)
 	}
+	if d.Brief != "b.txt" {
+		t.Errorf("dispatched brief = %q, want the repo-relative prompt path b.txt", d.Brief)
+	}
 	policyB, err := os.ReadFile(filepath.Join(dir, ".flywheel", "opencode-worker.json"))
 	if err != nil {
 		t.Fatalf("read policy: %v", err)
@@ -213,6 +216,28 @@ func TestRunSimAttemptNumbering(t *testing.T) {
 	}
 	if resC1.Session != "ses_test_clean_001" {
 		t.Errorf("c1 session = %q, want ses_test_clean_001", resC1.Session)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	var r1d, c1d Event
+	for _, e := range evs {
+		if e.Kind != "dispatched" {
+			continue
+		}
+		if e.Attempt == "r1" {
+			r1d = e
+		}
+		if e.Attempt == "c1" {
+			c1d = e
+		}
+	}
+	if r1d.Brief != "b.txt" {
+		t.Errorf("fresh dispatched brief = %q, want b.txt", r1d.Brief)
+	}
+	if c1d.Brief != ".flywheel/briefs/T1.delta.txt" {
+		t.Errorf("resume dispatched brief = %q, want .flywheel/briefs/T1.delta.txt", c1d.Brief)
 	}
 }
 
@@ -546,5 +571,121 @@ func TestWorkerEnvUsesAbsoluteConfigPath(t *testing.T) {
 	}
 	if !filepath.IsAbs(found) {
 		t.Errorf("OPENCODE_CONFIG = %q, want an absolute path", found)
+	}
+}
+
+// TestRunDispatchedPreservesExternalBriefPath checks a planned brief outside
+// the repo keeps its absolute path in dispatched.Brief.
+func TestRunDispatchedPreservesExternalBriefPath(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	ext := t.TempDir()
+	briefPath := filepath.Join(ext, "external.txt")
+	if err := os.WriteFile(briefPath, []byte("external brief\n"), 0o644); err != nil {
+		t.Fatalf("write external brief: %v", err)
+	}
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T00:00:00Z", Task: "T1", Kind: "planned", Brief: briefPath}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	if err := WriteConfig(dir, simConfig(fixturePath("clean.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	var buf bytes.Buffer
+	if _, err := Run(dir, RunOptions{Task: "T1", Progress: &buf}); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	if d := evs[1]; d.Kind != "dispatched" || d.Brief != briefPath {
+		t.Errorf("dispatched = %v, want the external brief %q preserved", d, briefPath)
+	}
+}
+
+// TestRunStartFailedOnEmptyFixture checks a worker that exits before any
+// completed step records finished reason start-failed.
+func TestRunStartFailedOnEmptyFixture(t *testing.T) {
+	dir := setupTask(t)
+	if err := WriteConfig(dir, simConfig(fixturePath("empty.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	var buf bytes.Buffer
+	res, err := Run(dir, RunOptions{Task: "T1", Progress: &buf})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if res.Reason != "start-failed" {
+		t.Errorf("reason = %q, want start-failed", res.Reason)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	f := evs[len(evs)-1]
+	if f.Kind != "finished" || f.Reason != "start-failed" {
+		t.Errorf("finished event = %v, want reason start-failed", f)
+	}
+	if f.Note != "" {
+		t.Errorf("finished note = %q, want empty (no stderr)", f.Note)
+	}
+}
+
+// TestRunStartFailedOnFailedFixture checks a worker that emits output but
+// exits before any completed step also records start-failed.
+func TestRunStartFailedOnFailedFixture(t *testing.T) {
+	dir := setupTask(t)
+	if err := WriteConfig(dir, simConfig(fixturePath("start-failed.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	var buf bytes.Buffer
+	res, err := Run(dir, RunOptions{Task: "T1", Progress: &buf})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if res.Reason != "start-failed" || res.Steps != 0 {
+		t.Errorf("reason/steps = %q/%d, want start-failed/0", res.Reason, res.Steps)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	f := evs[len(evs)-1]
+	if f.Kind != "finished" || f.Reason != "start-failed" {
+		t.Errorf("finished event = %v, want reason start-failed", f)
+	}
+}
+
+// TestRunStartFailedTruncatesStderrNote checks the finished note carries the
+// first nonempty stderr line, trimmed to at most 200 characters.
+func TestRunStartFailedTruncatesStderrNote(t *testing.T) {
+	dir := setupTask(t)
+	if err := WriteConfig(dir, simConfig(fixturePath("empty.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	// Pre-seed the attempt's stderr file the way the opencode adapter would;
+	// a sim run never touches it, and the start-failed note reads it.
+	errPath := filepath.Join(dir, ".flywheel", "runs", "T1.r1.err")
+	if err := os.MkdirAll(filepath.Dir(errPath), 0o755); err != nil {
+		t.Fatalf("mkdir runs: %v", err)
+	}
+	seed := "   \n" + strings.Repeat("y", 220) + "\nsecond stderr line\n"
+	if err := os.WriteFile(errPath, []byte(seed), 0o644); err != nil {
+		t.Fatalf("write stderr: %v", err)
+	}
+	var buf bytes.Buffer
+	if _, err := Run(dir, RunOptions{Task: "T1", Progress: &buf}); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	f := evs[len(evs)-1]
+	want := strings.Repeat("y", 200)
+	if f.Kind != "finished" || f.Reason != "start-failed" || f.Note != want {
+		t.Errorf("finished = %v, want start-failed with note %q", f, want)
 	}
 }
