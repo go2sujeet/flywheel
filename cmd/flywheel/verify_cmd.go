@@ -27,9 +27,9 @@ func verifyFlags() (*flag.FlagSet, *verifyOptions) {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	o := &verifyOptions{}
-	o.dir = *fs.String("dir", ".", "target directory")
-	o.all = *fs.Bool("all", false, "verify every task in the event log")
-	o.jsonOut = *fs.Bool("json", false, "print machine-readable JSON")
+	fs.StringVar(&o.dir, "dir", ".", "target directory")
+	fs.BoolVar(&o.all, "all", false, "verify every task in the event log")
+	fs.BoolVar(&o.jsonOut, "json", false, "print machine-readable JSON")
 	return fs, o
 }
 
@@ -44,19 +44,13 @@ func verifyUsage(w io.Writer) {
 // machine-readable result instead of the human lines.
 func runVerify(args []string) {
 	fs, o := verifyFlags()
-	var tasks []string
-	var parseArgs []string
-	for len(args) > 0 && len(args[0]) > 0 && args[0][0] != '-' {
-		tasks = append(tasks, args[0])
-		args = args[1:]
-	}
-	parseArgs = args
-	if err := fs.Parse(parseArgs); err != nil {
-		fmt.Fprintf(os.Stderr, "flywheel verify: %v\n", err)
+	pos, perr := parseArgs(fs, args)
+	if perr != nil {
+		fmt.Fprintf(os.Stderr, "flywheel verify: %v\n", perr)
 		verifyUsage(os.Stderr)
 		os.Exit(2)
 	}
-	tasks = append(tasks, fs.Args()...)
+	tasks := pos
 	res, err := flywheel.VerifyTasks(o.dir, flywheel.VerifyOptions{Dir: o.dir, Tasks: tasks, All: o.all})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "flywheel verify: %v\n", err)

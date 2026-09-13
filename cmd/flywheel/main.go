@@ -76,6 +76,29 @@ func hasHelpFlag(args []string) bool {
 	return false
 }
 
+// parseArgs parses args with fs, accepting flags before, between and after
+// positionals: it re-parses after each positional, and a literal "--" ends
+// flag parsing so everything after it is positional. It returns the
+// positionals in order.
+func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
+	var pos []string
+	for len(args) > 0 {
+		if args[0] == "--" {
+			return append(pos, args[1:]...), nil
+		}
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		args = fs.Args()
+		if len(args) == 0 {
+			return pos, nil
+		}
+		pos = append(pos, args[0])
+		args = args[1:]
+	}
+	return pos, nil
+}
+
 // bareAction decides what a bare `flywheel` (no arguments) does: open the
 // factory view when ./.flywheel exists, print the global help otherwise.
 func bareAction(flywheelDirExists bool) string {

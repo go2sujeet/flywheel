@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"flywheel/internal/flywheel"
 )
@@ -29,11 +28,11 @@ func inspectFlags() (*flag.FlagSet, *inspectOptions) {
 	fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	o := &inspectOptions{}
-	o.dir = *fs.String("dir", ".", "target directory")
-	o.workdir = *fs.String("workdir", "", "git working tree to hash")
-	o.verdict = *fs.String("verdict", "", "pass, rework, scrap, or escalate")
-	o.session = *fs.String("session", "", "inspector session, distinct from every worker session")
-	o.note = *fs.String("note", "", "optional inspection note")
+	fs.StringVar(&o.dir, "dir", ".", "target directory")
+	fs.StringVar(&o.workdir, "workdir", "", "git working tree to hash")
+	fs.StringVar(&o.verdict, "verdict", "", "pass, rework, scrap, or escalate")
+	fs.StringVar(&o.session, "session", "", "inspector session, distinct from every worker session")
+	fs.StringVar(&o.note, "note", "", "optional inspection note")
 	return fs, o
 }
 
@@ -47,28 +46,19 @@ func inspectUsage(w io.Writer) {
 // error exits 1.
 func runInspect(args []string) {
 	fs, o := inspectFlags()
-	var task string
-	var parseArgs []string
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		task = args[0]
-		parseArgs = args[1:]
-	} else {
-		parseArgs = args
-	}
-	if err := fs.Parse(parseArgs); err != nil {
+	pos, err := parseArgs(fs, args)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "flywheel inspect: %v\n", err)
 		inspectUsage(os.Stderr)
 		os.Exit(2)
 	}
-	if task == "" {
-		if fs.NArg() != 1 {
-			fmt.Fprintf(os.Stderr, "flywheel inspect: exactly one task id is required\n")
-			inspectUsage(os.Stderr)
-			os.Exit(2)
-		}
-		task = fs.Arg(0)
+	if len(pos) != 1 {
+		fmt.Fprintf(os.Stderr, "flywheel inspect: exactly one task id is required\n")
+		inspectUsage(os.Stderr)
+		os.Exit(2)
 	}
-	err := flywheel.InspectTask(o.dir, task, flywheel.InspectOptions{
+	task := pos[0]
+	err = flywheel.InspectTask(o.dir, task, flywheel.InspectOptions{
 		Dir: o.dir, Workdir: o.workdir, Verdict: o.verdict, Session: o.session, Note: o.note,
 	})
 	if err != nil {

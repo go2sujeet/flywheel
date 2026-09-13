@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"flywheel/internal/flywheel"
@@ -36,12 +35,12 @@ func runFlags() (*flag.FlagSet, *runOptions) {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	o := &runOptions{}
-	o.dir = *fs.String("dir", ".", "target directory")
-	o.worker = *fs.String("worker", "", "worker name")
-	o.model = *fs.String("model", "", "model name")
-	o.resume = *fs.Bool("resume", false, "resume the task's last session")
-	o.delta = *fs.String("delta", "", "delta brief file")
-	o.startTimeout = *fs.Duration("start-timeout", 60*time.Second, "startup timeout")
+	fs.StringVar(&o.dir, "dir", ".", "target directory")
+	fs.StringVar(&o.worker, "worker", "", "worker name")
+	fs.StringVar(&o.model, "model", "", "model name")
+	fs.BoolVar(&o.resume, "resume", false, "resume the task's last session")
+	fs.StringVar(&o.delta, "delta", "", "delta brief file")
+	fs.DurationVar(&o.startTimeout, "start-timeout", 60*time.Second, "startup timeout")
 	return fs, o
 }
 
@@ -51,15 +50,8 @@ func runFlags() (*flag.FlagSet, *runOptions) {
 // capped, or error), 2 usage, 1 any other error.
 func runRun(args []string) {
 	fs, o := runFlags()
-	var task string
-	var parseArgs []string
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		task = args[0]
-		parseArgs = args[1:]
-	} else {
-		parseArgs = args
-	}
-	if err := fs.Parse(parseArgs); err != nil {
+	pos, err := parseArgs(fs, args)
+	if err != nil {
 		if err == flag.ErrHelp {
 			runUsage(os.Stderr)
 			os.Exit(2)
@@ -68,18 +60,12 @@ func runRun(args []string) {
 		runUsage(os.Stderr)
 		os.Exit(2)
 	}
-	if task == "" {
-		if fs.NArg() != 1 {
-			fmt.Fprintf(os.Stderr, "flywheel run: exactly one task id is required\n")
-			runUsage(os.Stderr)
-			os.Exit(2)
-		}
-		task = fs.Arg(0)
-	} else if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "flywheel run: unexpected argument %q\n", fs.Arg(0))
+	if len(pos) != 1 {
+		fmt.Fprintf(os.Stderr, "flywheel run: exactly one task id is required\n")
 		runUsage(os.Stderr)
 		os.Exit(2)
 	}
+	task := pos[0]
 	res, err := flywheel.Run(o.dir, flywheel.RunOptions{
 		Task: task, Worker: o.worker, Model: o.model, Resume: o.resume,
 		DeltaPath: o.delta, StartTimeout: o.startTimeout, Progress: os.Stdout,
