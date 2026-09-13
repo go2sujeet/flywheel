@@ -1,10 +1,36 @@
 # flywheel
 
-A factory for AI coding agents.
+**Own the factory. Rent the agents and the intelligence.**
 
-[![CI](https://github.com/go2sujeet/flywheel/actions/workflows/ci.yml/badge.svg)](https://github.com/go2sujeet/flywheel/actions)
-[![Latest release](https://img.shields.io/github/v/release/go2sujeet/flywheel)](https://github.com/go2sujeet/flywheel/releases)
-[![License](https://img.shields.io/github/license/go2sujeet/flywheel)](LICENSE)
+A dark factory for AI coding work. The factory (work orders, gauges, the event log, its
+memory) is files you own. Agents and models are rented from any vendor and swapped at will:
+cheap disposable agents build, deterministic gauges check every claim, and one frontier
+lead makes only the critical calls.
+
+[![CI](https://github.com/suzworx/flywheel/actions/workflows/ci.yml/badge.svg)](https://github.com/suzworx/flywheel/actions)
+[![Latest release](https://img.shields.io/github/v/release/suzworx/flywheel)](https://github.com/suzworx/flywheel/releases)
+[![License](https://img.shields.io/github/license/suzworx/flywheel)](LICENSE)
+
+## Built by flywheel
+
+Flywheel is built by flywheel. Sujeet ([@suzworx](https://github.com/suzworx)) runs its
+development as a dark factory.
+
+- From v0.3.0 on, flywheel's own features (`flywheel run`, the gauges `validate`, `inspect` and
+  `verify`, the `flywheel factory` view), the CLI help and flag fixes, and the factory design
+  docs were built as work orders by disposable OpenCode workers on DeepSeek v4 flash (variant
+  max).
+- Each work order is a brief with `owns:`, `needs:` and `gate:` lines. flywheel's own gauges
+  re-run the gates on the exact tree hash and check `owns:`; inspection and `flywheel verify`
+  (rules T1, T3, T4, T5 and T8) gate every commit. Workers never commit.
+- One frontier lead seat outlines work orders, reviews diffs, runs checks against the built
+  binary and signs off. The lead seat changed hands between vendors mid-project and the work
+  continued from the files.
+- Measured worker cost: the CLI help and flag work took 7 units, 1.7M tokens and $0.33; a
+  design doc was drafted, corrected and extended by 5 units for about $0.03; a code unit costs
+  $0.03-0.08 and takes 15-29 minutes.
+
+The house rules the workers follow are in [AGENTS.md](AGENTS.md).
 
 ## The factory
 
@@ -44,12 +70,12 @@ flowchart LR
 
 - **Set up** — `flywheel init` scaffolds `flywheel.md` plus the `.flywheel/` state files
   (available in v0.2.0). Building the full factory — lines, staffing, and the policy that keeps it
-  safe — is [epic #69](https://github.com/go2sujeet/flywheel/issues/69).
-- **Run** — today the lead records each work order as an event with `flywheel log --kind planned`;
-  [flywheel run #20](https://github.com/go2sujeet/flywheel/issues/20) (in progress) will dispatch
-  OpenCode workers and record their runs automatically.
+  safe — is [epic #69](https://github.com/suzworx/flywheel/issues/69).
+- **Run** — the lead records each work order as an event with `flywheel log --kind planned`;
+  [flywheel run #20](https://github.com/suzworx/flywheel/issues/20) dispatches OpenCode workers
+  and records their runs automatically (v0.3.0).
 - **Watch** — `flywheel state` derives the floor from the event log (available in v0.2.0); the live
-  [flywheel factory #63](https://github.com/go2sujeet/flywheel/issues/63) dashboard is planned.
+  floor is the [flywheel factory #63](https://github.com/suzworx/flywheel/issues/63) view.
 
 Design priorities, in order: **efficiency and consistency**, then **speed, reliability and
 recoverability** — the lead spends tokens only where judgment is needed, gauges and telemetry cost
@@ -65,10 +91,11 @@ The goal is to ship with no human in the loop. That is only safe if every step i
 append-only event log), **measured** by the machine (gauges run by the CLI, never self-reported by
 an agent), and **audited** by independent checkers. Today the repo has the event log with
 `flywheel log` / `flywheel state`, the project config, the worker deny policy, and the persona
-skills; the gauges ([#55](https://github.com/go2sujeet/flywheel/issues/55)), isolated inspection
-([#24](https://github.com/go2sujeet/flywheel/issues/24)), external audit
-([#61](https://github.com/go2sujeet/flywheel/issues/61)) and the run dispatcher
-([#20](https://github.com/go2sujeet/flywheel/issues/20)) are being built.
+skills; the gauges ([#55](https://github.com/suzworx/flywheel/issues/55)) — `validate`, `inspect`
+and `verify`, with `inspect` refusing a worker inspecting its own unit
+([#24](https://github.com/suzworx/flywheel/issues/24)) — and the run dispatcher
+([#20](https://github.com/suzworx/flywheel/issues/20)) shipped in v0.3.0; external audit
+([#61](https://github.com/suzworx/flywheel/issues/61)) is still planned.
 
 Any agent can lead. The loop lives in repository files and shell commands, not inside any one
 vendor's session, so a new head — Claude Code, Codex, OpenCode, or a human — reads the same state
@@ -124,23 +151,23 @@ git still works.*
 ## Quickstart
 
 1. **Get the CLI.** Download **flywheel-v0.2.0-\<os\>-\<arch\>.zip** from the
-   [Releases page](https://github.com/go2sujeet/flywheel/releases) — Windows binaries ship as
+   [Releases page](https://github.com/suzworx/flywheel/releases) — Windows binaries ship as
    `flywheel-v0.2.0-windows-amd64.exe.zip` — plus `checksums.txt`. Or build from source:
 
    ```bash
-   git clone https://github.com/go2sujeet/flywheel.git && cd flywheel
+   git clone https://github.com/suzworx/flywheel.git && cd flywheel
    mkdir -p bin && go build -o bin/flywheel ./cmd/flywheel
    ```
 
-   `go install github.com/go2sujeet/flywheel/cmd/flywheel@latest` is not supported yet: go.mod
-   declares the module as `flywheel`, not `github.com/go2sujeet/flywheel`, so there is no
-   installable module path ([#74](https://github.com/go2sujeet/flywheel/issues/74)).
+   `go install github.com/suzworx/flywheel/cmd/flywheel@latest` is not supported yet: go.mod
+   declares the module as `flywheel`, not `github.com/suzworx/flywheel`, so there is no
+   installable module path ([#74](https://github.com/suzworx/flywheel/issues/74)).
 
 2. **Install the skills** into your agent — one per skill folder below:
 
    ```bash
-   npx skills add go2sujeet/flywheel --skill flywheel
-   npx skills add go2sujeet/flywheel --skill flywheel-worker
+   npx skills add suzworx/flywheel --skill flywheel
+   npx skills add suzworx/flywheel --skill flywheel-worker
    # ... flywheel-planner, flywheel-foreman, flywheel-inspector,
    #     flywheel-auditor, flywheel-steward, flywheel-operator
    ```
@@ -166,18 +193,18 @@ git still works.*
 | `flywheel state` | available (v0.2.0) | Derive and print state from the event log. |
 | `flywheel config` | available | Read and validate `.flywheel/config.json` (config package merged). |
 | `flywheel run` | available | Dispatch an OpenCode worker and capture the run. |
-| `flywheel status` | planned ([#21](https://github.com/go2sujeet/flywheel/issues/21)) | Classify the state of runs and tasks. |
-| `flywheel watch` | planned ([#22](https://github.com/go2sujeet/flywheel/issues/22)) | Watch the line, one readable line per transition. |
+| `flywheel status` | planned ([#21](https://github.com/suzworx/flywheel/issues/21)) | Classify the state of runs and tasks. |
+| `flywheel watch` | planned ([#22](https://github.com/suzworx/flywheel/issues/22)) | Watch the line, one readable line per transition. |
 | `flywheel validate` | available | Machine gauges: run a task's gate: lines on the exact tree and check owns (exit 0/5). |
-| `flywheel supervise` | planned ([#55](https://github.com/go2sujeet/flywheel/issues/55)) | Machine gauges: measure finished units, run the gates. |
+| `flywheel supervise` | planned ([#55](https://github.com/suzworx/flywheel/issues/55)) | Machine gauges: measure finished units, run the gates. |
 | `flywheel verify` | available | Check the event log against the transition rules T1, T3, T4, T5, T8 (exit 0/6). |
 | `flywheel inspect` | available | Inspection verdict, refused unless the gauges' readings cover the tree as it is now (T3/T4/T8; exit 6). |
-| `flywheel audit` | planned ([#61](https://github.com/go2sujeet/flywheel/issues/61)) | External audit of first articles and samples. |
-| `flywheel land` | planned ([#45](https://github.com/go2sujeet/flywheel/issues/45)) | Local landing queue: rebase, re-measure, fast-forward. |
-| `flywheel factory` | available | Live terminal dashboard of the floor; bare `flywheel` opens it ([#63](https://github.com/go2sujeet/flywheel/issues/63)). |
-| `flywheel explain`, `flywheel context` | planned ([#58](https://github.com/go2sujeet/flywheel/issues/58)) | A task's traveler; the factory state sized for a joining agent. |
-| `flywheel trace` | planned ([#62](https://github.com/go2sujeet/flywheel/issues/62)) | Everything one session did, across tasks. |
-| `flywheel feedback` | planned ([#37](https://github.com/go2sujeet/flywheel/issues/37)–[#40](https://github.com/go2sujeet/flywheel/issues/40)) | Turn signals into learnings; export and submit upstream. |
+| `flywheel audit` | planned ([#61](https://github.com/suzworx/flywheel/issues/61)) | External audit of first articles and samples. |
+| `flywheel land` | planned ([#45](https://github.com/suzworx/flywheel/issues/45)) | Local landing queue: rebase, re-measure, fast-forward. |
+| `flywheel factory` | available | Live terminal dashboard of the floor; bare `flywheel` opens it ([#63](https://github.com/suzworx/flywheel/issues/63)). |
+| `flywheel explain`, `flywheel context` | planned ([#58](https://github.com/suzworx/flywheel/issues/58)) | A task's traveler; the factory state sized for a joining agent. |
+| `flywheel trace` | planned ([#62](https://github.com/suzworx/flywheel/issues/62)) | Everything one session did, across tasks. |
+| `flywheel feedback` | planned ([#37](https://github.com/suzworx/flywheel/issues/37)–[#40](https://github.com/suzworx/flywheel/issues/40)) | Turn signals into learnings; export and submit upstream. |
 
 ## Skills
 
@@ -196,11 +223,11 @@ Each role ships as a skill folder any agent can load:
 
 Three epics drive the factory:
 
-- [#10](https://github.com/go2sujeet/flywheel/issues/10) — the factory core: the append-only event
+- [#10](https://github.com/suzworx/flywheel/issues/10) — the factory core: the append-only event
   log, project config, and built-in feedback.
-- [#35](https://github.com/go2sujeet/flywheel/issues/35) — flywheel at scale: native feedback,
+- [#35](https://github.com/suzworx/flywheel/issues/35) — flywheel at scale: native feedback,
   personas, many workers, offline.
-- [#51](https://github.com/go2sujeet/flywheel/issues/51) — autonomous shipping: a unit's full path
+- [#51](https://github.com/suzworx/flywheel/issues/51) — autonomous shipping: a unit's full path
   from work order to landing, with no human in the loop.
 
 ## CI/CD
@@ -218,8 +245,8 @@ Three epics drive the factory:
 
 Consumer repos keep their learnings in `.flywheel/learnings.md` — the log of what hurt, so friction
 becomes spec (flywheel will generate it from signals,
-[#38](https://github.com/go2sujeet/flywheel/issues/38)). This repo gitignores that file and tracks
-its own learnings as issues under [epic #10](https://github.com/go2sujeet/flywheel/issues/10).
+[#38](https://github.com/suzworx/flywheel/issues/38)). This repo gitignores that file and tracks
+its own learnings as issues under [epic #10](https://github.com/suzworx/flywheel/issues/10).
 
 ## License
 
