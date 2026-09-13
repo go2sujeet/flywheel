@@ -27,7 +27,7 @@ cmd/flywheel/          CLI entry point (subcommand dispatch, flags)
 internal/flywheel/     core logic (init scaffold, state)
 skills/flywheel/       the skill: how to operate the loop (SKILL.md, references, evals)
 examples/              worked brief examples (gmail draft)
-.flywheel/             local runtime state (briefs, runs, learnings) — gitignored
+.flywheel/             runtime state — gitignored here (this repo's dogfood state is scratch); consumer repos commit everything except runs/ (see skills/flywheel-operator/SKILL.md)
 ```
 
 ## Install & validate

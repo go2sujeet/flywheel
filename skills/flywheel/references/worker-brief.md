@@ -24,7 +24,20 @@ only what those cannot know. One task per brief. Each brief must state, in plain
 - **Task-specific tests** — tests only this task can define, beyond what the repo's documented
   gates already cover.
 - **Report contract** — what to return: files changed, tests run, exact output of those tests,
-  exit status, and anything it left undone or uncertain.
+  exit status, and anything it left undone or uncertain, plus a "Findings outside `owns:`"
+  section: real problems noticed outside the task, reported not fixed. One such finding became
+  a new task.
+- **Plan check-in** — the brief says "state your plan in one text message before step 20", so
+  the orchestrator can check direction without interrupting (a 53-step exploration was otherwise
+  unreadable).
+- **Moves and renames** — when a task moves or renames a file, grant "files that reference it
+  (list them with grep first)" in `owns:`. Moves break every test that reads the file by path;
+  workers handled it correctly, but had to flag it instead of being allowed.
+- **State-changing routes** — require one failure-injection test per state-changing route (see
+  the traps in §6).
+- **Docs tasks** — "document what is in the code; flag what is not". A docs worker told to
+  document a parallel task caught a code/doc mismatch this way; the docs task becomes a cheap
+  second reviewer.
 
 Large scope per brief is fine; large single writes are not.
 
@@ -53,7 +66,7 @@ and glob expansion and keeps the brief out of your editing surface:
 ```bash
 mkdir -p .flywheel/runs
 opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
-  "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.jsonl; rc=$?
+  "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
 ```
 
 - `-m "$MODEL"` is the **approved default**. Never switch providers or models silently, and never
@@ -69,7 +82,11 @@ opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
 - `--pure` runs without external plugins, so the worker always gets OpenCode's default `build` agent
   whatever the user's global config loads. In one run a global plugin replaced the agent and both
   workers looped on reads without editing; `--pure` fixed it. If a project needs a plugin, pin the
-  agent with `--agent build` instead and watch for the same loop.
+  agent with `--agent build` instead and watch for the same loop. Resuming a session first started
+  without `--pure` under `--pure` works — it held across ten dispatches in a consumer run, fresh
+  and resumed. In another setup the same global plugin did not swap the agent, so the effect depends
+  on the plugin and its config; `--pure` removes the variable either way. If a plugin is what
+  supplies provider auth, `--pure` drops it: set credentials with `opencode auth login` instead.
 - `--title "<id>"` gives the run a human-readable label — and is the kill handle in §3;
   `--format json` is what emits the **actual session id** in the output.
 - `< /dev/null` closes stdin and is required on every dispatch and every resume. In a non-TTY shell
@@ -77,10 +94,14 @@ opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
   startup, which looks exactly like a stall. Run dispatches from bash (Git Bash on Windows);
   PowerShell 5.1 has no `/dev/null` and no `&&`.
 - `rc=$?` captures the **actual exit status** — save it; it is evidence.
+- Run files are per attempt: `.flywheel/runs/<id>.r1.jsonl` for the first fresh run (`r2` if you
+  ever re-dispatch fresh) and `<id>.c1.jsonl`, `<id>.c2.jsonl`, ... for each correction resume.
+  Per-attempt steps, tokens and finish reasons then stay separate, so a correction never pollutes
+  the fresh run's stats.
 - Read the run file and record the emitted `sessionID` — every JSONL event carries it:
 
   ```bash
-  grep -o '"sessionID":"[^"]*"' .flywheel/runs/<id>.jsonl | head -1
+  grep -o '"sessionID":"[^"]*"' .flywheel/runs/<id>.r1.jsonl | head -1
   ```
 
   That value — and only that value — is what you pass to `--session` later. `--session` accepts an
@@ -99,8 +120,9 @@ output cap was hit), `part.tokens` `{total, input, output, reasoning, cache: {re
 | starting | no output yet | wait — a healthy run writes its first event within about 30 s (the probe took 25 s end to end). |
 | silent | no output after 60 s | check, in order: was stdin closed? is there a provider error in the opencode log? Only then treat it as stalled. |
 | running | events arriving | do nothing; let it run. |
+| exploring | distinct files read keeps rising, zero edits, no file read over and over | healthy for large tasks — one run read for 53 steps, about 40 minutes, then made 50 edits steadily. Compare the plan message the brief asked for (see §1) with what it is reading; if off course, stop it by PID and resume with a delta, otherwise leave it. |
 | long step | events stop for 5-10 min during a large generation | not a stall; do not kill it. |
-| read loop | many reads of the same file and no edits (compare `"tool":"read"` with `"tool":"edit"`/`"tool":"write"` counts in the run file) | stop it by PID, check which agent the opencode log shows for the session (`agent=` on its lines), and re-dispatch with `--pure`. |
+| read loop | the same file read again and again, no edits (compare `"tool":"read"` with `"tool":"edit"`/`"tool":"write"` counts in the run file) | stop it by PID, check which agent the opencode log shows for the session (`agent=` on its lines), and re-dispatch with `--pure`. |
 | capped | rc 0 and the last reason is `length` | resume the same session, with the write rule as the delta. |
 | provider error | an `error` event in the JSONL, or errors only in the opencode log | see §8. |
 | done | rc 0 and the last reason is `stop` | review it (§6). |
@@ -108,11 +130,13 @@ output cap was hit), `part.tokens` `{total, input, output, reasoning, cache: {re
 Detection commands:
 
 ```bash
-wc -c < .flywheel/runs/<id>.jsonl                                # 0 after 60 s = silent
-grep -o '"reason":"[^"]*"' .flywheel/runs/<id>.jsonl | tail -1  # stop | length
-grep '"type":"error"' .flywheel/runs/<id>.jsonl                  # provider error in the run
+wc -c < .flywheel/runs/<id>.<attempt>.jsonl                               # 0 after 60 s = silent
+grep -o '"reason":"[^"]*"' .flywheel/runs/<id>.<attempt>.jsonl | tail -1  # stop | length
+grep '"type":"error"' .flywheel/runs/<id>.<attempt>.jsonl                 # provider error in the run
 grep '<sessionID>' ~/.local/share/opencode/log/opencode.log | tail -20
 ```
+
+`<attempt>` is the run being classified (`r1` for the fresh run, `c<n>` for a correction).
 
 The shared log is `~/.local/share/opencode/log/opencode.log`
 (`%USERPROFILE%\.local\share\opencode\log\opencode.log` on Windows). It mixes every session on the
@@ -170,6 +194,13 @@ do not let two sessions race on one file.
 in-flight work. Recompute it from the brief headers every time. A scheduler is not needed; the filter
 is (the field run had 44 tasks and 5 choke-point files). A read-only `flywheel next` is planned for
 this.
+
+**Early dispatch with a follow-up delta.** Docs, audit and verification tasks whose dependencies are
+still in flight can dispatch early. Add this addendum to the brief: "Cover only what has landed in
+the working tree; list anything still missing under 'planned, not found'." After the dependency
+lands, resume the same session with a short delta to cover the rest (typically 10-15 steps). In a
+consumer run this paid off four times and saved roughly one full worker cycle (30-60 minutes) per
+task.
 
 **Contract dependency.** Write ownership is not the only dependency. Task B may compile against a
 function signature that task A is creating, in a file B must not edit — files are disjoint, tasks are
@@ -238,6 +269,15 @@ The worker executes tests; **you judge the evidence**. Never accept "tests passe
 - **Assumptions the worker never questions** (multi-tenant isolation, token lifecycle, idempotency).
   In the field run, diff review caught a cross-account existence oracle, a token-loss design flaw,
   and a revoke that deleted the row the revoked state depended on. No worker flagged any of them.
+- **Debug and test-only surfaces under the production flag**: look for them in every auth diff. A
+  test-only token endpoint was still built under the production flag, so anyone could mint a
+  session; no worker flagged it.
+- **Contract prose that disagrees with its test rows**: cross-check them. Two contract rows
+  contradicted each other about the same header.
+- **Error paths that fall through**: for every `catch` that sends a response, check that it returns,
+  and inject one store failure per state-changing route. A handler sent the error but carried on to
+  close a device socket, publish a change event and journal a revoke that never happened; its own 72
+  tests passed because none injected a failure.
 
 ## 7. Correct, don't implement
 
@@ -247,8 +287,11 @@ brief (only the correction, not a restated task):
 
 ```bash
 opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
-  "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null >> .flywheel/runs/<id>.jsonl; rc=$?
+  "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
 ```
+
+Each correction resume writes a new attempt file (`c1`, `c2`, ...) with `>` — never `>>` — so
+per-attempt steps, tokens and finish reasons stay separate (§2).
 
 `--auto` is required here too (same non-interactive permission prompt), and stdin must be closed per
 §2.
@@ -270,7 +313,8 @@ field run after credit exhaustion. Never pick the fallback yourself, and never a
 
 ## 9. Hard rules
 
-- No automatic commits or pushes, ever. Committing is the user's call and the user's instruction.
+- No commits or pushes unless the user asks; standing instructions in the repo's `CLAUDE.md` or
+  `AGENTS.md` count as asking. Workers never commit.
 - No secrets, keys, tokens, or credentials in a brief or on any command line.
 - DRY: drive the `opencode` CLI directly. Do not copy scripts, do not scaffold a framework. The
   `opencode-delegate` skill is an optional integration you may call; it is never something to clone.
