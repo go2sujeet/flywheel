@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -470,5 +471,64 @@ func TestInitForceLeavesExistingEventLogUntouched(t *testing.T) {
 	}
 	if string(b2) != string(b) {
 		t.Error("--force overwrote or truncated the event log")
+	}
+}
+
+func TestInitWritesDefaultConfig(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	cfg, exists, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if !exists {
+		t.Fatal("Init() did not write .flywheel/config.json")
+	}
+	if !reflect.DeepEqual(cfg, DefaultConfig()) {
+		t.Errorf("config = %+v, want the built-in default %+v", cfg, DefaultConfig())
+	}
+}
+
+func TestInitForceKeepsExistingConfig(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	configPath := filepath.Join(dir, ".flywheel", "config.json")
+	custom := []byte(`{"version":1,"workers":[{"name":"sim","adapter":"sim","model":"f.jsonl"}]}`)
+	if err := os.WriteFile(configPath, custom, 0o644); err != nil {
+		t.Fatalf("write config.json: %v", err)
+	}
+
+	if _, err := Init(dir, true); err != nil {
+		t.Fatalf("Init() --force error = %v", err)
+	}
+	b, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config.json: %v", err)
+	}
+	if string(b) != string(custom) {
+		t.Error("--force overwrote the existing config.json")
+	}
+}
+
+func TestInitRollbackRemovesCreatedConfig(t *testing.T) {
+	dir := t.TempDir()
+	// Block .flywheel/.gitignore with a directory so Init fails after the
+	// config.json it created.
+	block := filepath.Join(dir, ".flywheel", ".gitignore")
+	if err := os.MkdirAll(block, 0o755); err != nil {
+		t.Fatalf("mkdir block: %v", err)
+	}
+	if _, err := Init(dir, false); err == nil {
+		t.Skip("Init() did not fail; skipping rollback assertion")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".flywheel", "config.json")); !os.IsNotExist(err) {
+		t.Error("config.json left behind after rollback")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "flywheel.md")); !os.IsNotExist(err) {
+		t.Error("flywheel.md left behind after rollback")
 	}
 }

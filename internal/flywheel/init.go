@@ -59,6 +59,7 @@ func Init(dir string, force bool) (string, error) {
 	statePath := filepath.Join(dotFlywheel, "state.json")
 	eventsPath := filepath.Join(dotFlywheel, "events.jsonl")
 	gitignorePath := filepath.Join(dotFlywheel, ".gitignore")
+	configPath := filepath.Join(dotFlywheel, configFileName)
 
 	// Preflight both file destinations before touching anything so a refusal
 	// preserves the directory exactly as it was.
@@ -75,6 +76,11 @@ func Init(dir string, force bool) (string, error) {
 		return "", fmt.Errorf("encode state: %w", err)
 	}
 	stateBytes := append(stateJSON, '\n')
+	configJSON, err := json.MarshalIndent(DefaultConfig(), "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("encode config: %w", err)
+	}
+	configBytes := append(configJSON, '\n')
 
 	// Snapshot what existed before this call so a failure can restore
 	// preexisting bytes and remove only what this call created.
@@ -86,6 +92,7 @@ func Init(dir string, force bool) (string, error) {
 	createdState := false
 	createdEvents := false
 	createdGitignore := false
+	createdConfig := false
 
 	// rollback undoes this call's own footprint after an error: restore
 	// preexisting regular-file bytes, remove files this call created, and
@@ -106,6 +113,9 @@ func Init(dir string, force bool) (string, error) {
 		}
 		if createdGitignore {
 			_ = os.Remove(gitignorePath)
+		}
+		if createdConfig {
+			_ = os.Remove(configPath)
 		}
 		if !briefsExisted {
 			_ = os.Remove(briefsDir)
@@ -138,6 +148,13 @@ func Init(dir string, force bool) (string, error) {
 	if err != nil {
 		rollback()
 		return "", fmt.Errorf("write %s: %w", eventsPath, err)
+	}
+	// The config is the project configuration: create it from the built-in
+	// default only if missing. It is never overwritten, even with --force.
+	createdConfig, err = createIfMissing(configPath, configBytes)
+	if err != nil {
+		rollback()
+		return "", fmt.Errorf("write %s: %w", configPath, err)
 	}
 	createdGitignore, err = createIfMissing(gitignorePath, []byte("runs/\n"))
 	if err != nil {

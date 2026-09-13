@@ -1,0 +1,6 @@
+{"type":"step_start","sessionID":"ses_test_clean_001","part":{"type":"step_start","step":1,"startTime":"2026-09-12T00:00:00Z"},"time":{"startedAt":"2026-09-12T00:00:00Z"}}
+{"type":"text","sessionID":"ses_test_clean_001","part":{"type":"text","text":"PLAN read the layout, then implement the command registry."}}
+{"type":"tool_use","sessionID":"ses_test_clean_001","part":{"type":"tool_use","tool":"read","state":{"input":{"filePath":"cmd/flywheel/main.go"}}}}
+{"type":"step_finish","sessionID":"ses_test_clean_001","part":{"type":"step_finish","reason":"stop","tokens":{"input":120,"output":40,"reasoning":10,"cache":{"read":800,"write":5}},"cost":0.003}}
+{"type":"text","sessionID":"ses_test_clean_001","part":{"type":"text","text":"Implemented the command registry. Files changed: main.go. Tests pass."}}
+{"type":"step_finish","sessionID":"ses_test_clean_001","part":{"type":"step_finish","reason":"stop","tokens":{"input":80,"output":30,"reasoning":5,"cache":{"read":200,"write":0}},"cost":0.001}}

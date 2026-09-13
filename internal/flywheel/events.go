@@ -12,6 +12,15 @@ import (
 	"time"
 )
 
+// Tokens is a run's token accounting, summed across the run's steps.
+type Tokens struct {
+	Input      int `json:"input"`
+	Output     int `json:"output"`
+	Reasoning  int `json:"reasoning"`
+	CacheRead  int `json:"cache_read"`
+	CacheWrite int `json:"cache_write"`
+}
+
 // Event is one JSON object per line in .flywheel/events.jsonl. The event log
 // is the source of truth; state.json and flywheel.md are derived from it.
 type Event struct {
@@ -29,18 +38,26 @@ type Event struct {
 	Owns    []string `json:"owns,omitempty"`
 	Commit  string   `json:"commit,omitempty"`
 	Note    string   `json:"note,omitempty"`
+	Adapter string   `json:"adapter,omitempty"`
+	Path    string   `json:"path,omitempty"`
+	SHA256  string   `json:"sha256,omitempty"`
+	Tokens  *Tokens  `json:"tokens,omitempty"`
+	Cost    float64  `json:"cost,omitempty"`
+	Steps   int      `json:"steps,omitempty"`
 }
 
 // kinds is the set of event kinds understood by Derive.
 var kinds = map[string]bool{
-	"planned":    true,
-	"dispatched": true,
-	"started":    true,
-	"finished":   true,
-	"reviewed":   true,
-	"blocked":    true,
-	"landed":     true,
-	"amended":    true,
+	"planned":     true,
+	"dispatched":  true,
+	"started":     true,
+	"worker_plan": true,
+	"finished":    true,
+	"report":      true,
+	"reviewed":    true,
+	"blocked":     true,
+	"landed":      true,
+	"amended":     true,
 }
 
 // isTaskChar reports whether c is allowed in a task id: ^[A-Za-z0-9._-]+$.
@@ -82,7 +99,7 @@ func Validate(e Event) error {
 		return fmt.Errorf("event task %q does not match ^[A-Za-z0-9._-]+$", e.Task)
 	}
 	if !kinds[e.Kind] {
-		return fmt.Errorf("event kind %q is not one of planned, dispatched, started, finished, reviewed, blocked, landed, amended", e.Kind)
+		return fmt.Errorf("event kind %q is not one of planned, dispatched, started, worker_plan, finished, report, reviewed, blocked, landed, amended", e.Kind)
 	}
 	if e.Attempt != "" && !attemptOK(e.Attempt) {
 		return fmt.Errorf("event attempt %q does not match ^[rc][0-9]+$", e.Attempt)

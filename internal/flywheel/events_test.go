@@ -222,3 +222,81 @@ func TestAppendConcurrent(t *testing.T) {
 		t.Errorf("distinct tasks = %d, want 50", len(seen))
 	}
 }
+
+func TestNewKindsValidate(t *testing.T) {
+	for _, k := range []string{"worker_plan", "report"} {
+		if err := Validate(Event{Task: "T1", Kind: k}); err != nil {
+			t.Errorf("Validate() rejected kind %s: %v", k, err)
+		}
+	}
+	if err := Validate(Event{Task: "T1", Kind: "bogus"}); err == nil {
+		t.Error("Validate() accepted unknown kind")
+	} else if !strings.Contains(err.Error(), "worker_plan") || !strings.Contains(err.Error(), "report") {
+		t.Errorf("Validate() error = %v, want the full kind list", err)
+	}
+}
+
+func TestEventNewFieldsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	toks := new(Tokens)
+	*toks = Tokens{Input: 100, Output: 20, Reasoning: 5, CacheRead: 900, CacheWrite: 10}
+	e := Event{
+		TS:      "2026-09-12T00:00:00Z",
+		Task:    "T1",
+		Kind:    "finished",
+		Session: "ses_test_1",
+		Adapter: "opencode",
+		Path:    ".flywheel/runs/T1.r1.jsonl",
+		SHA256:  "abc123",
+		Tokens:  toks,
+		Cost:    0.004,
+		Steps:   12,
+		Reason:  "stop",
+	}
+	if err := AppendEvent(dir, e); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	if len(evs) != 1 {
+		t.Fatalf("ReadEvents() = %d events, want 1", len(evs))
+	}
+	got := evs[0]
+	if got.Adapter != "opencode" || got.Path != ".flywheel/runs/T1.r1.jsonl" || got.SHA256 != "abc123" {
+		t.Errorf("round trip adapter/path/sha256 mismatch: %v", got)
+	}
+	if got.Cost != 0.004 || got.Steps != 12 {
+		t.Errorf("round trip cost/steps mismatch: %v", got)
+	}
+	if got.Tokens == nil || got.Tokens.Input != 100 || got.Tokens.Output != 20 ||
+		got.Tokens.Reasoning != 5 || got.Tokens.CacheRead != 900 || got.Tokens.CacheWrite != 10 {
+		t.Errorf("round trip tokens mismatch: %v", got.Tokens)
+	}
+
+	b, err := os.ReadFile(filepath.Join(dir, ".flywheel", "events.jsonl"))
+	if err != nil {
+		t.Fatalf("read events.jsonl: %v", err)
+	}
+	content := string(b)
+	for _, k := range []string{`"adapter"`, `"path"`, `"sha256"`, `"tokens"`, `"cost"`, `"steps"`, `"cache_read"`} {
+		if !strings.Contains(content, k) {
+			t.Errorf("log missing key %s: %q", k, content)
+		}
+	}
+
+	// A plain event must not emit the new optional fields.
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T00:00:01Z", Task: "T2", Kind: "planned"}); err != nil {
+		t.Fatalf("AppendEvent() plain error = %v", err)
+	}
+	b, err = os.ReadFile(filepath.Join(dir, ".flywheel", "events.jsonl"))
+	if err != nil {
+		t.Fatalf("re-read events.jsonl: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+	if len(lines) < 2 || strings.Contains(lines[1], "adapter") || strings.Contains(lines[1], "tokens") {
+		t.Errorf("plain event emitted the new optional fields: %q", lines[1])
+	}
+}

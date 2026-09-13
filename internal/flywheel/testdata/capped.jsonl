@@ -1,0 +1,5 @@
+{"type":"step_start","sessionID":"ses_test_cap_002","part":{"type":"step_start","step":1,"startTime":"2026-09-12T00:00:00Z"},"time":{"startedAt":"2026-09-12T00:00:00Z"}}
+{"type":"text","sessionID":"ses_test_cap_002","part":{"type":"text","text":"PLAN this brief is short."}}
+{"type":"step_finish","sessionID":"ses_test_cap_002","part":{"type":"step_finish","reason":"length","tokens":{"input":500,"output":200,"reasoning":50,"cache":{"read":0,"write":0}},"cost":0.01}}
+{"type":"text","sessionID":"ses_test_cap_002","part":{"type":"text","text":"Ran out of output budget mid-write."}}
+{"type":"step_finish","sessionID":"ses_test_cap_002","part":{"type":"step_finish","reason":"length","tokens":{"input":100,"output":50,"reasoning":5,"cache":{"read":0,"write":0}},"cost":0.002}}

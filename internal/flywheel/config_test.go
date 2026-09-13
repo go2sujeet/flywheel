@@ -49,6 +49,30 @@ func TestWriteConfigRoundTrip(t *testing.T) {
 	}
 }
 
+func TestWriteConfigOverwritesExisting(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteConfig(dir, DefaultConfig()); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	custom := Config{
+		Version: 1,
+		Workers: []Worker{{Name: "sim", Adapter: "sim", Model: "fixture.jsonl"}},
+	}
+	if err := WriteConfig(dir, custom); err != nil {
+		t.Fatalf("WriteConfig() overwrite error = %v", err)
+	}
+	got, exists, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if !exists {
+		t.Fatal("LoadConfig() exists = false, want true after overwrite")
+	}
+	if !reflect.DeepEqual(got, custom) {
+		t.Errorf("LoadConfig() = %+v, want the overwriting config %+v", got, custom)
+	}
+}
+
 func TestConfigValidateCollectsProblems(t *testing.T) {
 	cfg := Config{
 		Version: 2,

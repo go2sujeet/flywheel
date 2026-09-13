@@ -157,6 +157,33 @@ func TestDeriveOrderingSameSecond(t *testing.T) {
 	}
 }
 
+func TestDeriveOrderingWithWorkerPlanAndReport(t *testing.T) {
+	// dispatched, started, worker_plan, report and finished share one
+	// second-precision TS; appended in reverse they must still derive
+	// finished, and worker_plan/report must not change status.
+	events := []Event{
+		{TS: "2026-09-12T00:00:00Z", Task: "T1", Kind: "finished"},
+		{TS: "2026-09-12T00:00:00Z", Task: "T1", Kind: "report", Path: "r.md", SHA256: "x"},
+		{TS: "2026-09-12T00:00:00Z", Task: "T1", Kind: "worker_plan", Path: "p.md", SHA256: "y"},
+		{TS: "2026-09-12T00:00:00Z", Task: "T1", Kind: "started"},
+		{TS: "2026-09-12T00:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1"},
+	}
+	st := Derive(events)
+	ts, ok := findTask(st, "T1")
+	if !ok {
+		t.Fatal("T1 missing from derived state")
+	}
+	if ts.Status != "finished" {
+		t.Errorf("T1 status = %q, want finished (report must not win over finished)", ts.Status)
+	}
+	if ts.Attempts != 1 {
+		t.Errorf("T1 attempts = %d, want 1", ts.Attempts)
+	}
+	if ts.Attempt != "r1" {
+		t.Errorf("T1 attempt = %q, want r1 (carried from dispatched)", ts.Attempt)
+	}
+}
+
 func TestDeriveOrderingNanoVsSecond(t *testing.T) {
 	// A nanosecond-precision TS in the same second sorts after the
 	// second-precision one even though '.' sorts before 'Z' as text.

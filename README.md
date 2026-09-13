@@ -153,8 +153,8 @@ git still works.*
 | `flywheel init` | available (v0.2.0) | Scaffold `flywheel.md` + `.flywheel/state.json` + `.flywheel/events.jsonl` + `.flywheel/briefs/`. |
 | `flywheel log` | available (v0.2.0) | Append an event to `.flywheel/events.jsonl` and re-derive state. |
 | `flywheel state` | available (v0.2.0) | Derive and print state from the event log. |
-| `flywheel config` | in progress ([#20](https://github.com/go2sujeet/flywheel/issues/20)) | Read and validate `.flywheel/config.json` (config package merged). |
-| `flywheel run` | in progress ([#20](https://github.com/go2sujeet/flywheel/issues/20)) | Dispatch an OpenCode worker and capture the run. |
+| `flywheel config` | available | Read and validate `.flywheel/config.json` (config package merged). |
+| `flywheel run` | available | Dispatch an OpenCode worker and capture the run. |
 | `flywheel status` | planned ([#21](https://github.com/go2sujeet/flywheel/issues/21)) | Classify the state of runs and tasks. |
 | `flywheel watch` | planned ([#22](https://github.com/go2sujeet/flywheel/issues/22)) | Watch the line, one readable line per transition. |
 | `flywheel validate` / `flywheel supervise` | planned ([#55](https://github.com/go2sujeet/flywheel/issues/55)) | Machine gauges: measure finished units, run the gates. |
