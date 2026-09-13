@@ -11,6 +11,9 @@ const markdownTemplate = `## Status
 
 status: initialized
 
+<!-- flywheel:status:start -->
+<!-- flywheel:status:end -->
+
 ## Main session
 
 Placeholder: main session notes go here.
@@ -27,13 +30,6 @@ Placeholder: role assignments go here.
 
 Placeholder: completed tasks are logged here.
 `
-
-// Field order is the JSON key order; the spec pins it to version, status, tasks.
-type stateFile struct {
-	Version int    `json:"version"`
-	Status  string `json:"status"`
-	Tasks   []any  `json:"tasks"`
-}
 
 // Init scaffolds flywheel state files into dir. It returns the absolute path
 // of the initialized directory.
@@ -61,6 +57,8 @@ func Init(dir string, force bool) (string, error) {
 	dotFlywheel := filepath.Join(abs, ".flywheel")
 	briefsDir := filepath.Join(dotFlywheel, "briefs")
 	statePath := filepath.Join(dotFlywheel, "state.json")
+	eventsPath := filepath.Join(dotFlywheel, "events.jsonl")
+	gitignorePath := filepath.Join(dotFlywheel, ".gitignore")
 
 	// Preflight both file destinations before touching anything so a refusal
 	// preserves the directory exactly as it was.
@@ -72,11 +70,7 @@ func Init(dir string, force bool) (string, error) {
 
 	// Stage the payloads before publishing anything.
 	mdBytes := []byte(markdownTemplate)
-	stateJSON, err := json.MarshalIndent(stateFile{
-		Version: 1,
-		Status:  "initialized",
-		Tasks:   []any{},
-	}, "", "  ")
+	stateJSON, err := json.MarshalIndent(Derive([]Event{}), "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("encode state: %w", err)
 	}
@@ -90,6 +84,8 @@ func Init(dir string, force bool) (string, error) {
 	dotFlywheelExisted := dirExisted(dotFlywheel)
 	createdMD := false
 	createdState := false
+	createdEvents := false
+	createdGitignore := false
 
 	// rollback undoes this call's own footprint after an error: restore
 	// preexisting regular-file bytes, remove files this call created, and
@@ -104,6 +100,12 @@ func Init(dir string, force bool) (string, error) {
 			_ = os.WriteFile(statePath, statePrev, 0o644)
 		} else if createdState {
 			_ = os.Remove(statePath)
+		}
+		if createdEvents {
+			_ = os.Remove(eventsPath)
+		}
+		if createdGitignore {
+			_ = os.Remove(gitignorePath)
 		}
 		if !briefsExisted {
 			_ = os.Remove(briefsDir)
@@ -128,6 +130,19 @@ func Init(dir string, force bool) (string, error) {
 	if err != nil {
 		rollback()
 		return "", fmt.Errorf("write %s: %w", statePath, err)
+	}
+
+	// The event log is the source of truth: create it and .gitignore only if
+	// missing. Neither is ever overwritten or truncated, even with --force.
+	createdEvents, err = createIfMissing(eventsPath, []byte{})
+	if err != nil {
+		rollback()
+		return "", fmt.Errorf("write %s: %w", eventsPath, err)
+	}
+	createdGitignore, err = createIfMissing(gitignorePath, []byte("runs/\n"))
+	if err != nil {
+		rollback()
+		return "", fmt.Errorf("write %s: %w", gitignorePath, err)
 	}
 
 	return abs, nil
@@ -174,6 +189,31 @@ func publishFile(path string, b []byte, force bool) (created bool, err error) {
 		f.Close()
 		os.Remove(path)
 		return true, err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(path)
+		return true, err
+	}
+	return true, nil
+}
+
+// createIfMissing writes b to path only when path does not exist, using
+// O_EXCL so a racing creator wins and the file is never overwritten or
+// truncated. It reports whether this call created the file.
+func createIfMissing(path string, b []byte) (created bool, err error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if os.IsExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if len(b) > 0 {
+		if _, err := f.Write(b); err != nil {
+			f.Close()
+			os.Remove(path)
+			return true, err
+		}
 	}
 	if err := f.Close(); err != nil {
 		os.Remove(path)
