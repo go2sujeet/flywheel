@@ -9,6 +9,7 @@ import (
 
 func init() {
 	register("version", "print the flywheel version", runVersion)
+	registerHelp("version", "flywheel version", nil)
 }
 
 func runVersion(args []string) {
