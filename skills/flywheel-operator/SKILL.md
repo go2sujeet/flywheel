@@ -10,7 +10,7 @@ description: >-
   handoff is done by writing state files and passing emitted session IDs by hand.
 license: MIT
 metadata:
-  version: 0.2.0
+  version: 0.3.0
 ---
 
 # Flywheel Operator
@@ -55,7 +55,7 @@ Everything is files — no database.
 | `flywheel.md` | Human-readable state: Status, Main session, Workers, Roles, Task log. |
 | `.flywheel/state.json` | Machine-precise state: `version`, `status`, `tasks[]`. |
 | `.flywheel/briefs/` | One file per task brief (`<id>.txt`) and per correction (`<id>.delta.txt`). |
-| `.flywheel/runs/` | Raw dispatch output (JSONL) per run, written by the dispatch command's redirect. |
+| `.flywheel/runs/` | Raw dispatch output (JSONL) per attempt — `<id>.r1.jsonl` fresh run, `<id>.c<n>.jsonl` corrections. |
 | `.flywheel/learnings.md` | Dogfood log — friction becomes spec (create it by hand). |
 
 **Repo is the session.** State lives in files, not in any vendor CLI session. That is what makes
@@ -63,6 +63,12 @@ handoff free: a new head reads the same files and continues. Helper scripts and 
 the repo, never in a per-session scratch directory — a session restart loses them. Because
 `handoff` is not built yet, transfer is manual — write the current state into `flywheel.md` and
 the brief files, and pass the emitted session ID by hand to the next head.
+
+**In a consumer repo.** Commit the state: `flywheel.md`, `.flywheel/state.json`,
+`.flywheel/briefs/`, `.flywheel/plans/`, `.flywheel/learnings.md`, `.flywheel/scripts/` (and
+`.flywheel/events.jsonl` once the event log lands, issue #11); ignore `.flywheel/runs/` and any
+local cache. This framework repo ignores its own `.flywheel/` only because its dogfood state is
+scratch — consumer repos commit theirs.
 
 ## Operating the loop
 
@@ -80,11 +86,11 @@ same state files the planned subcommands will automate. `$MODEL` is set once in
    ```bash
    mkdir -p .flywheel/runs
    opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
-     "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.jsonl; rc=$?
+     "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
    ```
    Session id (every JSONL event carries it):
    ```bash
-   grep -o '"sessionID":"[^"]*"' .flywheel/runs/<id>.jsonl | head -1
+   grep -o '"sessionID":"[^"]*"' .flywheel/runs/<id>.r1.jsonl | head -1
    ```
    Record the exit code and the emitted session ID in `flywheel.md` — `flywheel run` will do this
    when it lands.
@@ -94,7 +100,7 @@ same state files the planned subcommands will automate. `$MODEL` is set once in
    corrections. Pass the session ID by hand; there is no automatic handoff:
    ```bash
    opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
-     "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null >> .flywheel/runs/<id>.jsonl; rc=$?
+     "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
    ```
 
 ## Control plane vs data plane

@@ -10,7 +10,7 @@ description: >-
   do not take over implementation yourself.
 license: MIT
 metadata:
-  version: 0.2.0
+  version: 0.3.0
 ---
 
 # Flywheel
@@ -56,8 +56,9 @@ State is the repo, not any vendor session: a correction or a handoff reads the s
   model is unauthenticated, the session cannot be resumed, or a provider error hits (per-key
   limit, out of credits, a consent gate such as China hosting), report the blocker and halt
   ([references/worker-brief.md#8-blocker-protocol-do-not-take-over](references/worker-brief.md#8-blocker-protocol-do-not-take-over)).
-- **No unrequested commits, pushes, or secrets.** The worker must not commit; you commit only when
-  the user asks. Never put secrets or keys in a brief.
+- **No unrequested commits, pushes, or secrets.** Commit and push only when the user asks;
+  standing instructions in `CLAUDE.md` or `AGENTS.md` count as asking. Workers never commit. Never
+  put secrets or keys in a brief.
 - **DRY.** Use the `opencode` CLI directly. Do not copy scripts or scaffold a framework. The
   `opencode-delegate` skill is an optional integration, never a dependency to clone.
 
@@ -73,6 +74,10 @@ concurrency, assign **disjoint file ownership** — no two workers may touch the
 state the exact contract in both briefs when one task compiles against another's in-flight work. A
 task is ready when its `needs:` have landed and its `owns:` is disjoint from in-flight work
 ([references/worker-brief.md#4-concurrency-disjoint-file-ownership-preserve-dirty-edits](references/worker-brief.md#4-concurrency-disjoint-file-ownership-preserve-dirty-edits)).
+Every brief asks the worker to state its plan in one text message before step 20. Docs, audit, and
+verification tasks can go out before their dependencies land: dispatch them with a "planned, not
+found" addendum for what is not there yet, then send a follow-up delta once the dependency lands
+([references/worker-brief.md#4-concurrency-disjoint-file-ownership-preserve-dirty-edits](references/worker-brief.md#4-concurrency-disjoint-file-ownership-preserve-dirty-edits)).
 Template and rules: [references/worker-brief.md](references/worker-brief.md).
 
 ### 2. Dispatch (safe quoted file brief)
@@ -83,14 +88,17 @@ so you can capture the session id:
 ```bash
 mkdir -p .flywheel/runs
 opencode run --pure -m "$MODEL" --auto --format json --title "<id>" \
-  "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.jsonl; rc=$?
+  "$(cat .flywheel/briefs/<id>.txt)" < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
 ```
 
 Session id (every JSONL event carries it):
 
 ```bash
-grep -o '"sessionID":"[^"]*"' .flywheel/runs/<id>.jsonl | head -1
+grep -o '"sessionID":"[^"]*"' .flywheel/runs/<id>.r1.jsonl | head -1
 ```
+
+One run file per attempt — `r1` for the first fresh run, `c1`, `c2`, ... for each correction — so
+per-attempt steps, tokens, and finish reasons stay separate.
 
 `< /dev/null` closes stdin: in a non-TTY shell (an agent's shell tool, CI) `opencode run` waits on
 an open stdin and writes nothing after startup, which looks exactly like a stall. Dispatch from
@@ -105,15 +113,19 @@ never takes an invented string.
 The worker runs tests itself. You do not run the tests for it; you judge its results afterward.
 Expect the first event within about 30 s. If a run is silent after 60 s or ends early, classify it
 before retrying ([references/worker-brief.md#3-run-states-and-failures](references/worker-brief.md#3-run-states-and-failures));
-check the opencode log for provider errors before calling it a stall. Never kill opencode processes
-by name.
+check the opencode log for provider errors before calling it a stall. A run reading many distinct
+files with no edits is `exploring`, not stuck — check its plan message before acting
+([references/worker-brief.md#3-run-states-and-failures](references/worker-brief.md#3-run-states-and-failures)).
+Never kill opencode processes by name.
 
 ### 4. Review — judge evidence, never trust self-report
 - **Actual exit status** (`rc`): nonzero means the run failed to execute — investigate, don't
   proceed. Zero means it ran; it does **not** mean the task is correct.
 - **`git diff`** against the brief: did it do what was asked, nothing more and nothing less?
 - Watch the recurring traps: gate failures in files the worker does not own, edits outside `owns:`,
-  and tests that pass only as a superuser
+  tests that pass only as a superuser, debug or test-only surfaces still reachable under the
+  production flag, contract prose that disagrees with its tests, and error paths that send a
+  response without returning
   ([references/worker-brief.md#6-review-exit-status--diff-and-independent-validation](references/worker-brief.md#6-review-exit-status--diff-and-independent-validation)).
 - **Independent validation when needed:** re-run the gates yourself on sensitive or suspicious
   changes; treat "tests passed" as a claim to be verified, not a fact. You may run validation
@@ -125,7 +137,7 @@ by name.
 
 ```bash
 opencode run --pure -m "$MODEL" --auto --format json --session "<emitted-sessionID>" \
-  "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null >> .flywheel/runs/<id>.jsonl; rc=$?
+  "$(cat .flywheel/briefs/<id>.delta.txt)" < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
 ```
 
 - Correct and gate-passing → surface the result; commit **only** if the user asked you to.
