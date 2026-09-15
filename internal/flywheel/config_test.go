@@ -368,6 +368,56 @@ func TestConfigLeaseValidation(t *testing.T) {
 	}
 }
 
+func TestConfigControllerDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	interval, ttl, intent := cfg.controllerTimings()
+	if interval != 10*time.Second || ttl != 30*time.Second || intent != 2*time.Minute {
+		t.Errorf("controllerTimings() = %s/%s/%s, want 10s/30s/2m", interval, ttl, intent)
+	}
+	if cfg.Controller != nil {
+		t.Errorf("DefaultConfig().Controller = %+v, want nil (an absent block must stay absent)", cfg.Controller)
+	}
+}
+
+func TestConfigControllerTimingsFromBlock(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Controller = &ControllerConfig{Interval: "20s", LockTTL: "60s", IntentTimeout: "5m"}
+	interval, ttl, intent := cfg.controllerTimings()
+	if interval != 20*time.Second || ttl != 60*time.Second || intent != 5*time.Minute {
+		t.Errorf("controllerTimings() = %s/%s/%s, want 20s/60s/5m", interval, ttl, intent)
+	}
+}
+
+func TestConfigControllerValidation(t *testing.T) {
+	cases := []struct {
+		name string
+		cc   ControllerConfig
+		want string
+	}{
+		{"interval zero", ControllerConfig{Interval: "0s", LockTTL: "30s"}, "controller.interval 0s must be positive"},
+		{"interval negative", ControllerConfig{Interval: "-5s", LockTTL: "30s"}, "controller.interval -5s must be positive"},
+		{"interval unparseable", ControllerConfig{Interval: "soon", LockTTL: "30s"}, `controller.interval "soon" is not a valid duration`},
+		{"lock_ttl zero", ControllerConfig{Interval: "10s", LockTTL: "0s"}, "controller.lock_ttl 0s must be positive"},
+		{"lock_ttl unparseable", ControllerConfig{Interval: "10s", LockTTL: "later"}, `controller.lock_ttl "later" is not a valid duration`},
+		{"lock_ttl equal", ControllerConfig{Interval: "10s", LockTTL: "10s"}, "controller.lock_ttl 10s must be greater than interval 10s"},
+		{"lock_ttl shorter", ControllerConfig{Interval: "10s", LockTTL: "5s"}, "controller.lock_ttl 5s must be greater than interval 10s"},
+		{"intent zero", ControllerConfig{Interval: "10s", LockTTL: "30s", IntentTimeout: "0s"}, "controller.intent_timeout 0s must be positive"},
+		{"intent unparseable", ControllerConfig{Interval: "10s", LockTTL: "30s", IntentTimeout: "soon"}, `controller.intent_timeout "soon" is not a valid duration`},
+	}
+	for _, tc := range cases {
+		cfg := Config{Version: 1, Workers: []Worker{{Name: "w", Adapter: "sim", Model: "m"}}, Controller: &tc.cc}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: Validate() = %v, want error containing %q", tc.name, err, tc.want)
+		}
+	}
+	ok := Config{Version: 1, Workers: []Worker{{Name: "w", Adapter: "sim", Model: "m"}},
+		Controller: &ControllerConfig{Interval: "10s", LockTTL: "30s", IntentTimeout: "2m"}}
+	if err := ok.Validate(); err != nil {
+		t.Errorf("valid controller block: Validate() error = %v, want nil", err)
+	}
+}
+
 func TestConfigWithoutLeaseRoundTripsUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	cfg := Config{Version: 1, Workers: []Worker{{Name: "default", Adapter: "opencode", Model: "m"}}}

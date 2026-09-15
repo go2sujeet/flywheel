@@ -58,6 +58,19 @@ func recCases() []recCase {
 			want:   []Action{},
 		},
 		{
+			name: "mark-lost-already-lost",
+			events: []Event{
+				{TS: "2026-09-14T00:00:00Z", Task: "m", Kind: "planned", Brief: "b.txt"},
+				{TS: "2026-09-14T00:01:00Z", Task: "m", Kind: "dispatched", Attempt: "r1"},
+				{TS: "2026-09-14T00:01:30Z", Task: "m", Kind: "started"},
+				{TS: "2026-09-14T00:02:00Z", Task: "m", Kind: "lost", Attempt: "r1", Reason: "lease-expired"},
+			},
+			leases: []Lease{lease("m", "r1", "2026-09-14T00:02:00Z")},
+			policy: Policy{MaxParallel: 2},
+			now:    "2026-09-14T00:10:00Z",
+			want:   []Action{},
+		},
+		{
 			name: "request-inspection",
 			events: []Event{
 				{TS: "2026-09-14T00:00:00Z", Task: "q", Kind: "planned", Brief: "b.txt"},

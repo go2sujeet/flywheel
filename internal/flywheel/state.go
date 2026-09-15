@@ -44,10 +44,10 @@ type TaskState struct {
 // kindRank orders same-instant events so the status machine replays in the
 // intended order: planned < amended < dispatched < started < worker_plan <
 // finished < report < validated < owns_checked < inspected < reviewed <
-// blocked < landed. worker_plan, report, validated and owns_checked carry no
-// status; the ranks keep a same-timestamp dispatched, started, worker_plan,
-// report, finished sequence deriving finished, and gauge kinds after a
-// same-timestamp inspected deriving its verdict.
+// blocked < lost < landed. worker_plan, report, validated and owns_checked
+// carry no status; the ranks keep a same-timestamp dispatched, started,
+// worker_plan, report, finished sequence deriving finished, and gauge kinds
+// after a same-timestamp inspected deriving its verdict.
 var kindRank = map[string]int{
 	"planned":      0,
 	"amended":      1,
@@ -61,7 +61,8 @@ var kindRank = map[string]int{
 	"inspected":    9,
 	"reviewed":     10,
 	"blocked":      11,
-	"landed":       12,
+	"lost":         12,
+	"landed":       13,
 }
 
 // staleKinds are the result-bearing event kinds whose attempt must match the
@@ -74,6 +75,7 @@ var staleKinds = map[string]bool{
 	"finished":     true,
 	"validated":    true,
 	"owns_checked": true,
+	"lost":         true,
 }
 
 // eventSortKey is the precomputed comparison key for one event, so sorting
@@ -183,6 +185,8 @@ func Derive(events []Event) State {
 			}
 		case "blocked":
 			ts.Status = "blocked"
+		case "lost":
+			ts.Status = "lost"
 		case "landed":
 			ts.Status = "landed"
 		case "inspected":

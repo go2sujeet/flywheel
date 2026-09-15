@@ -20,11 +20,12 @@ var workerNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 // Config is the project configuration stored in .flywheel/config.json.
 type Config struct {
-	Version  int          `json:"version"`
-	Workers  []Worker     `json:"workers"`
-	Limits   Limits       `json:"limits,omitempty"`
-	Feedback Feedback     `json:"feedback,omitempty"`
-	Lease    *LeaseConfig `json:"lease,omitempty"`
+	Version    int               `json:"version"`
+	Workers    []Worker          `json:"workers"`
+	Limits     Limits            `json:"limits,omitempty"`
+	Feedback   Feedback          `json:"feedback,omitempty"`
+	Lease      *LeaseConfig      `json:"lease,omitempty"`
+	Controller *ControllerConfig `json:"controller,omitempty"`
 }
 
 // Worker configures a single CLI worker.
@@ -72,6 +73,48 @@ const (
 	defaultLeaseRenewInterval = 15 * time.Second
 	defaultLeaseTTL           = 45 * time.Second
 )
+
+// ControllerConfig tunes the controller loop: the tick interval, the lock
+// ttl and the intent timeout (unused until the dispatch phase). All three
+// are Go duration strings; when the block is absent the defaults apply:
+// interval 10s, lock_ttl 30s, intent_timeout 2m.
+type ControllerConfig struct {
+	Interval      string `json:"interval,omitempty"`
+	LockTTL       string `json:"lock_ttl,omitempty"`
+	IntentTimeout string `json:"intent_timeout,omitempty"`
+}
+
+const (
+	defaultControllerInterval      = 10 * time.Second
+	defaultControllerLockTTL       = 30 * time.Second
+	defaultControllerIntentTimeout = 2 * time.Minute
+)
+
+// controllerTimings returns the controller interval, lock ttl and intent
+// timeout; an absent controller block (or unparseable values, which Validate
+// rejects) means the defaults.
+func (c Config) controllerTimings() (interval, ttl, intent time.Duration) {
+	interval, ttl, intent = defaultControllerInterval, defaultControllerLockTTL, defaultControllerIntentTimeout
+	if c.Controller == nil {
+		return interval, ttl, intent
+	}
+	if i, err := time.ParseDuration(c.Controller.Interval); err == nil {
+		interval = i
+	}
+	if t, err := time.ParseDuration(c.Controller.LockTTL); err == nil {
+		ttl = t
+	}
+	if m, err := time.ParseDuration(c.Controller.IntentTimeout); err == nil {
+		intent = m
+	}
+	return interval, ttl, intent
+}
+
+// ControllerTimings is the exported form of controllerTimings for the
+// command entry points.
+func ControllerTimings(cfg Config) (interval, ttl, intent time.Duration) {
+	return cfg.controllerTimings()
+}
 
 // leaseTimings returns the lease renew interval and ttl; an absent lease
 // block (or unparseable values, which Validate rejects) means the defaults.
@@ -197,6 +240,29 @@ func (c Config) Validate() error {
 		}
 		if rerr == nil && terr == nil && ttl <= renew {
 			problems = append(problems, fmt.Sprintf("lease.ttl %s must be greater than renew_interval %s", c.Lease.TTL, c.Lease.RenewInterval))
+		}
+	}
+	if c.Controller != nil {
+		interval, ierr := time.ParseDuration(c.Controller.Interval)
+		if ierr != nil {
+			problems = append(problems, fmt.Sprintf("controller.interval %q is not a valid duration", c.Controller.Interval))
+		} else if interval <= 0 {
+			problems = append(problems, fmt.Sprintf("controller.interval %s must be positive", c.Controller.Interval))
+		}
+		lockTTL, terr := time.ParseDuration(c.Controller.LockTTL)
+		if terr != nil {
+			problems = append(problems, fmt.Sprintf("controller.lock_ttl %q is not a valid duration", c.Controller.LockTTL))
+		} else if lockTTL <= 0 {
+			problems = append(problems, fmt.Sprintf("controller.lock_ttl %s must be positive", c.Controller.LockTTL))
+		}
+		intent, merr := time.ParseDuration(c.Controller.IntentTimeout)
+		if merr != nil {
+			problems = append(problems, fmt.Sprintf("controller.intent_timeout %q is not a valid duration", c.Controller.IntentTimeout))
+		} else if intent <= 0 {
+			problems = append(problems, fmt.Sprintf("controller.intent_timeout %s must be positive", c.Controller.IntentTimeout))
+		}
+		if ierr == nil && terr == nil && lockTTL <= interval {
+			problems = append(problems, fmt.Sprintf("controller.lock_ttl %s must be greater than interval %s", c.Controller.LockTTL, c.Controller.Interval))
 		}
 	}
 	if len(problems) == 0 {

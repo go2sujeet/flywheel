@@ -44,6 +44,7 @@ planned subcommands land — don't invoke commands that aren't built.
 | `flywheel status [--dir DIR] [--now RFC3339] [--json]` | **implemented** | Summarize the factory deterministically: task counts per status, live and stale attempts, last event and last meaningful progress, andon count. |
 | `flywheel next [--dir DIR] [--now RFC3339] [--json]` | **implemented** | Print the reconciler's next actions read-only: lost attempts, inspection requests, blocks, waits and dispatches; nothing executes them yet. |
 | `flywheel goal add "<title>" --id <id> [--accept CMD]... [--require TASK]...` | **implemented** | Record a factory goal; later add, list, show and set its status with `flywheel goal <add\|list\|show\|set>`. |
+| `flywheel controller [--once] [--interval D] [--dir DIR] [--now RFC3339]` | **implemented** | The controller loop: acquire `.flywheel/controller.lock`, tick (mark lost attempts, block tasks whose needs were scrapped), renew the lock each tick; `--once` runs one tick and releases the lock, a live lock held elsewhere exits 6. |
 | `flywheel plan`, `retry`, `handoff` | **planned** | Control plane: create tasks, resume, transfer between agents. |
 | `flywheel trace`, `artifacts` | **planned** | Data plane: task positions, worker outputs. |
 

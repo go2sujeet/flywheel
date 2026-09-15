@@ -128,6 +128,29 @@ func TestStatusFixture(t *testing.T) {
 	}
 }
 
+// TestStatusCountsLost: a lost event derives status lost and flywheel status
+// counts it in its task counts.
+func TestStatusCountsLost(t *testing.T) {
+	dir := t.TempDir()
+	events := []Event{
+		{TS: "2026-09-14T00:00:00Z", Task: "t-lost", Kind: "planned", Brief: "b.txt"},
+		{TS: "2026-09-14T00:01:00Z", Task: "t-lost", Kind: "dispatched", Attempt: "r1"},
+		{TS: "2026-09-14T00:02:00Z", Task: "t-lost", Kind: "lost", Attempt: "r1", Reason: "lease-expired"},
+	}
+	for _, e := range events {
+		if err := AppendEvent(dir, e); err != nil {
+			t.Fatalf("append event: %v", err)
+		}
+	}
+	rep, err := Status(dir, statusNow(t))
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if rep.Tasks.Total != 1 || rep.Tasks.Lost != 1 {
+		t.Errorf("tasks total/lost = %d/%d, want 1/1", rep.Tasks.Total, rep.Tasks.Lost)
+	}
+}
+
 func TestStatusJSONRoundTrip(t *testing.T) {
 	dir := statusFixture(t)
 	rep, err := Status(dir, statusNow(t))

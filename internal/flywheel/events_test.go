@@ -258,14 +258,14 @@ func TestAppendConcurrent(t *testing.T) {
 }
 
 func TestNewKindsValidate(t *testing.T) {
-	for _, k := range []string{"worker_plan", "report"} {
+	for _, k := range []string{"worker_plan", "report", "lost"} {
 		if err := Validate(Event{Task: "T1", Kind: k}); err != nil {
 			t.Errorf("Validate() rejected kind %s: %v", k, err)
 		}
 	}
 	if err := Validate(Event{Task: "T1", Kind: "bogus"}); err == nil {
 		t.Error("Validate() accepted unknown kind")
-	} else if !strings.Contains(err.Error(), "worker_plan") || !strings.Contains(err.Error(), "report") {
+	} else if !strings.Contains(err.Error(), "worker_plan") || !strings.Contains(err.Error(), "report") || !strings.Contains(err.Error(), "lost") {
 		t.Errorf("Validate() error = %v, want the full kind list", err)
 	}
 }
