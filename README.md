@@ -183,6 +183,16 @@ git still works.*
    workers, and judges the evidence. `flywheel run` records each dispatch automatically; the
    lead records the other events (reviews, landings) with `flywheel log`.
 
+### Upgrading
+
+- Swap the binary; renaming the old executable is safe while a unit runs.
+- Keep symlinked skill installs rather than copies — the skills installer can replace symlinks
+  with copies.
+- Commit `skills-lock.json`, or any tracked file the skills installer touched, before the next
+  `flywheel validate`, because files the lead changes after a unit's dispatch count against that
+  unit's owns check.
+- Run `flywheel status` afterwards.
+
 ## CLI
 
 `flywheel help <command>` (or `<command> -h`) prints any command's flags.

@@ -96,9 +96,9 @@ func truncate(s string, n int) string {
 	return s[:n-1] + "~"
 }
 
-// ageHuman renders a whole-second age in human units, rounding down: seconds
+// HumanAge renders a whole-second age in human units, rounding down: seconds
 // below 60, minutes below an hour, hours below 48, days beyond.
-func ageHuman(seconds int) string {
+func HumanAge(seconds int) string {
 	switch {
 	case seconds < 60:
 		return fmt.Sprintf("%ds", seconds)
@@ -159,7 +159,7 @@ func renderUnits(w io.Writer, f Floor, taskWd, modelWd int, color bool) {
 			sessW, truncate(u.Session, sessW),
 			modelWd, truncate(u.Model, modelWd),
 			stepsW, fmt.Sprintf("%d", u.Steps),
-			ageW, ageHuman(u.LastAge),
+			ageW, HumanAge(u.LastAge),
 			run)
 	}
 }
@@ -169,7 +169,7 @@ func renderAndon(w io.Writer, f Floor, color bool) {
 	fmt.Fprintf(w, "\nandon (%d)\n", len(f.Andon))
 	for _, a := range f.Andon {
 		st := paint(color, stateColor(a.State), padLeft(a.State, runW))
-		fmt.Fprintf(w, "  %-*s  %s  %s\n", andonW, truncate(a.Task, andonW), st, ageHuman(a.Age))
+		fmt.Fprintf(w, "  %-*s  %s  %s\n", andonW, truncate(a.Task, andonW), st, HumanAge(a.Age))
 	}
 }
 

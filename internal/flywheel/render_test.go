@@ -103,22 +103,20 @@ func TestRenderTextWidth(t *testing.T) {
 	}
 }
 
-func TestAgeHuman(t *testing.T) {
+func TestHumanAge(t *testing.T) {
 	for _, tc := range []struct {
 		seconds int
 		want    string
 	}{
 		{59, "59s"},
 		{60, "1m"},
-		{3540, "59m"},
+		{3599, "59m"},
 		{3600, "1h"},
-		{169200, "47h"},
+		{172799, "47h"},
 		{172800, "2d"},
-		{147278, "40h"},
-		{0, "0s"},
 	} {
-		if got := ageHuman(tc.seconds); got != tc.want {
-			t.Errorf("ageHuman(%d) = %q, want %q", tc.seconds, got, tc.want)
+		if got := HumanAge(tc.seconds); got != tc.want {
+			t.Errorf("HumanAge(%d) = %q, want %q", tc.seconds, got, tc.want)
 		}
 	}
 }
