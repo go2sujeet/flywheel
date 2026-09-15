@@ -46,7 +46,8 @@ planned subcommands land — don't invoke commands that aren't built.
 | `flywheel cost [--dir DIR] [--json]` | **implemented** | Sum finished events' tokens and cost per task and per model; a finished task without a dispatch is listed under `unknown`. |
 | `flywheel next [--dir DIR] [--now RFC3339] [--json]` | **implemented** | Print the reconciler's next actions read-only: lost attempts, inspection requests, blocks, waits and dispatches; nothing executes them yet. |
 | `flywheel goal add "<title>" --id <id> [--accept CMD]... [--require TASK]...` | **implemented** | Record a factory goal; later add, list, show and set its status with `flywheel goal <add\|list\|show\|set>`. |
-| `flywheel plan`, `retry`, `handoff` | **planned** | Control plane: create tasks, resume, transfer between agents. |
+| `flywheel handoff [--dir DIR] [--stdout]` | **implemented** | Print the handoff summary for a new head — in-flight tasks (with session and model), blockers, next ready tasks and the default worker model; with `--stdout` to stdout, otherwise into `flywheel.md` between the handoff markers. |
+| `flywheel plan`, `retry` | **planned** | Control plane: create tasks, resume, transfer between agents. |
 | `flywheel trace`, `artifacts` | **planned** | Data plane: task positions, worker outputs. |
 
 ## Install

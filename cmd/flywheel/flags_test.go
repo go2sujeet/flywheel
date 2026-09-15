@@ -28,6 +28,7 @@ var allFlagsFuncs = map[string]flagsAny{
 	"status":   func() (*flag.FlagSet, any) { fs, o := statusFlags(); return fs, o },
 	"next":     func() (*flag.FlagSet, any) { fs, o := nextFlags(); return fs, o },
 	"goal":     func() (*flag.FlagSet, any) { fs, o := goalFlags(); return fs, o },
+	"handoff":  func() (*flag.FlagSet, any) { fs, o := handoffFlags(); return fs, o },
 	"cost":     func() (*flag.FlagSet, any) { fs, o := costFlags(); return fs, o },
 }
 
