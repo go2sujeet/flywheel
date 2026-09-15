@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -41,6 +42,8 @@ func statusFixture(t *testing.T) string {
 		{TS: "2026-09-14T00:00:00Z", Task: "t-land", Kind: "started"},
 		{TS: "2026-09-14T00:04:00Z", Task: "t-land", Kind: "finished", Attempt: "r1"},
 		{TS: "2026-09-14T00:06:00Z", Task: "t-land", Kind: "landed", Commit: "abc"},
+		{TS: "2026-09-14T00:06:30Z", Kind: "goal", Goal: &GoalSpec{ID: "g1", Title: "Ship status", Required: []string{"t-pass", "t-planned"}, Status: "active"}},
+		{TS: "2026-09-14T00:06:31Z", Kind: "goal", Goal: &GoalSpec{ID: "g2", Title: "Ship goals", Status: "met"}},
 		{TS: "2026-09-14T00:07:00Z", Kind: "staffed", Persona: "lead", Session: "s1"},
 	}
 	for _, e := range events {
@@ -100,6 +103,23 @@ func TestStatusFixture(t *testing.T) {
 	if rep.Andon != 1 {
 		t.Errorf("andon = %d, want 1 (only the silent unit)", rep.Andon)
 	}
+	if rep.Goals.Active != 1 || rep.Goals.Met != 1 || rep.Goals.Failed != 0 || rep.Goals.Abandoned != 0 {
+		t.Errorf("goals = active %d, met %d, failed %d, abandoned %d; want 1/1/0/0",
+			rep.Goals.Active, rep.Goals.Met, rep.Goals.Failed, rep.Goals.Abandoned)
+	}
+	if len(rep.Goals.List) != 2 {
+		t.Fatalf("goals list = %d entries, want 2", len(rep.Goals.List))
+	}
+	g1, g2 := rep.Goals.List[0], rep.Goals.List[1]
+	if g1.ID != "g1" || g1.Status != "active" || g1.Title != "Ship status" {
+		t.Errorf("goals[0] = %+v, want g1 active Ship status", g1)
+	}
+	if g1.Progress != "1/2 required tasks accepted" {
+		t.Errorf("g1 progress = %q, want 1/2 required tasks accepted", g1.Progress)
+	}
+	if g2.ID != "g2" || g2.Status != "met" || g2.Title != "Ship goals" {
+		t.Errorf("goals[1] = %+v, want g2 met Ship goals", g2)
+	}
 }
 
 func TestStatusJSONRoundTrip(t *testing.T) {
@@ -118,6 +138,9 @@ func TestStatusJSONRoundTrip(t *testing.T) {
 	}
 	if got.Factory != rep.Factory || got.Tasks != rep.Tasks || got.Attempts != rep.Attempts || got.Andon != rep.Andon {
 		t.Errorf("round-trip mismatch: got %+v, want %+v", got, rep)
+	}
+	if !reflect.DeepEqual(got.Goals, rep.Goals) {
+		t.Errorf("goals round-trip = %+v, want %+v", got.Goals, rep.Goals)
 	}
 	if got.LastEventAt == nil || *got.LastEventAt != *rep.LastEventAt {
 		t.Errorf("last_event_at round-trip = %+v, want %+v", got.LastEventAt, rep.LastEventAt)
@@ -146,5 +169,8 @@ func TestStatusEmptyFactory(t *testing.T) {
 	}
 	if rep.Andon != 0 {
 		t.Errorf("andon = %d, want 0", rep.Andon)
+	}
+	if !reflect.DeepEqual(rep.Goals, StatusGoals{}) {
+		t.Errorf("goals = %+v, want none (prints Goals: none)", rep.Goals)
 	}
 }

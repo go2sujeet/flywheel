@@ -76,6 +76,18 @@ func runStatus(args []string) {
 // printStatus writes the text summary, one line per group.
 func printStatus(rep flywheel.StatusReport) {
 	fmt.Printf("Factory: %s\n", rep.Factory)
+	if len(rep.Goals.List) == 0 {
+		fmt.Println("Goals: none")
+	} else {
+		fmt.Printf("Goals: active %d  met %d  failed %d  abandoned %d\n",
+			rep.Goals.Active, rep.Goals.Met, rep.Goals.Failed, rep.Goals.Abandoned)
+		for _, g := range rep.Goals.List {
+			if g.Status != "active" {
+				continue
+			}
+			fmt.Printf("  %s  %s  %s\n", g.ID, g.Progress, g.Title)
+		}
+	}
 	fmt.Printf("Tasks: total %d", rep.Tasks.Total)
 	for _, c := range []struct {
 		name  string

@@ -13,9 +13,29 @@ type StatusReport struct {
 	Factory        string         `json:"factory"`
 	Tasks          StatusTasks    `json:"tasks"`
 	Attempts       StatusAttempts `json:"attempts"`
+	Goals          StatusGoals    `json:"goals"`
 	LastEventAt    *LastEvent     `json:"last_event_at,omitempty"`
 	LastProgressAt *LastEvent     `json:"last_progress_at,omitempty"`
 	Andon          int            `json:"andon"`
+}
+
+// StatusGoals counts the goals in each status plus one entry per goal, sorted
+// by id, as the status list.
+type StatusGoals struct {
+	Active    int        `json:"active"`
+	Met       int        `json:"met"`
+	Failed    int        `json:"failed"`
+	Abandoned int        `json:"abandoned"`
+	List      []GoalLine `json:"list"`
+}
+
+// GoalLine is one goal in the status list: its id, status, progress line and
+// title.
+type GoalLine struct {
+	ID       string `json:"id"`
+	Status   string `json:"status"`
+	Progress string `json:"progress"`
+	Title    string `json:"title"`
 }
 
 // StatusTasks counts the tasks in each derived status.
@@ -91,6 +111,19 @@ func Status(dir string, now time.Time) (StatusReport, error) {
 	rep.LastProgressAt = latestEvent(w.events, now, func(e Event) bool {
 		return e.Kind == "landed" || e.Kind == "inspected" && e.Verdict == "pass"
 	})
+	for _, g := range Goals(w.events) {
+		switch g.Status {
+		case "active":
+			rep.Goals.Active++
+		case "met":
+			rep.Goals.Met++
+		case "failed":
+			rep.Goals.Failed++
+		case "abandoned":
+			rep.Goals.Abandoned++
+		}
+		rep.Goals.List = append(rep.Goals.List, GoalLine{ID: g.ID, Status: g.Status, Progress: g.Progress, Title: g.Title})
+	}
 	rep.Andon = len(fl.Andon)
 	return rep, nil
 }
