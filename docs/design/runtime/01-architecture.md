@@ -42,7 +42,7 @@ validated, owns_checked, inspected, staffed.
 | Q12 | State reconstructable deterministically? | Partial, the log is the source of truth but state derivation is elsewhere. |
 | Q13 | Stalled work detected automatically? | No, detection is not in this subsystem. |
 | Q14 | Retried automatically? | No, retries are a higher-level decision. |
-| Q15 | Retries survive a restart? | Partial, events survive; retry policy lives in the run subsystem. |
+| Q15 | Retries survive a restart? | Partial, events survive; no retry policy exists; redispatch is a manual lead decision. |
 | Q16 | Duplicate work possible? | Yes, nothing deduplicates events at append time. |
 | Q17 | Stale worker results mutate newer state? | No, the log is append-only; mutation happens in derived state. |
 | Q18 | Progress measurable without conversations? | Yes, kinds and fields (rc, tokens, duration_ms) carry progress. |
@@ -83,12 +83,14 @@ temp file plus rename (`atomicWrite`), and updates the marked status table in fl
 | Q14 | Retried automatically? | No, derivation only reflects retries someone else scheduled. |
 | Q15 | Retries survive a restart? | Yes, retries are events in the log and replay identically. |
 | Q16 | Duplicate work possible? | Partial, attempts counter increments per dispatched; no dedup check. |
-| Q17 | Stale worker results mutate newer state? | No, sort is by timestamp, so later events win. |
+| Q17 | Stale worker results mutate newer state? | Yes, Derive does not check an event's attempt against the latest dispatch; a late event from an older attempt wins. |
 | Q18 | Progress measurable without conversations? | Yes, attempts, status and counts expose progress. |
 
 - Gaps: no stall detection (no liveness timestamps consulted); state.json is a full rewrite, not
   incremental; no history retained beyond the last status per task; two processes writing
-  state.json race (last rename wins).
+  state.json race (last rename wins); Derive does not check an event's attempt against the
+  latest dispatch, so a late finished or validated event from an older attempt overwrites the
+  newer attempt's status.
 
 ### Work orders
 
@@ -264,3 +266,320 @@ git write (internal/flywheel/factory.go:NewWatcher).
 - Gaps: andon is display-only — no alerting, no automatic re-dispatch; watch mode and andon
   persistence are not in this package; stall classification trusts mtime, which a touched file
   can spoof; per-unit cost is not surfaced on units, only aggregated.
+
+### Gauges (`flywheel validate`)
+
+`ValidateTask` loads the task's planned brief (refusing a task with no planned event or a brief
+with no gate lines), hashes the exact tree as found using a throwaway git index (`treeHash`:
+read-tree HEAD, add -A, drop `.flywheel/` and `flywheel.md` from the index, write-tree), runs
+each declared `gate:` line through bash -c (cmd /C on Windows, sh elsewhere) with a one-shot
+rerun when Windows Smart App Control blocked the freshly built binary, writes the combined
+output to `.flywheel/evidence/<task>/<attempt>/gate-<n>.log`, and records one validated event
+per gate carrying gate, command, tree, rc, duration, output SHA-256 and log path
+(internal/flywheel/gauges.go:ValidateTask, internal/flywheel/gauges.go:treeHash,
+internal/flywheel/gauges.go:runGate). The owns check lists every path differing from HEAD plus
+untracked files and flags those outside the owns boundary, then records owns_checked and
+refreshes state (internal/flywheel/gauges.go:changedPaths,
+internal/flywheel/gauges.go:ownsContains, internal/flywheel/gauges.go:finishValidate). The CLI
+prints pass/fail per gate and exits 0 on `OK()`, 5 when a gate failed or a path sits outside
+owns, 1 on error, 2 on usage; the task id is accepted before or after flags
+(cmd/flywheel/validate_cmd.go:runValidate, cmd/flywheel/main.go:parseArgs).
+
+- State owned: `.flywheel/evidence/<task>/<attempt>/gate-<n>.log`; validated events (gate,
+  command, tree, rc, duration_ms, sha256, path) and owns_checked events (tree, outside).
+- Guarantees: the tree hash never touches the shared index (throwaway GIT_INDEX_FILE); every
+  gate's combined output is kept verbatim with a hash, so a reading can be re-verified; owns is
+  checked against the tree as found; a host-blocked gate is rerun once before it counts.
+
+| Q | Question | Answer |
+| --- | --- | --- |
+| Q6 | Deterministic? | Yes, tree hash, owns set and gate pass/fail are deterministic; only duration and output text vary. |
+| Q7 | Needs an agent alive? | No, gates are local shell commands. |
+| Q8 | A worker dies? | Yes, readings are event records needing no worker. |
+| Q9 | The orchestrating process dies? | Partial, evidence logs persist; a killed validate records no validated event for unfinished gates. |
+| Q10 | All workers die? | Yes, validation is CLI-side. |
+| Q11 | All LLM providers unavailable? | Yes, gates run locally. |
+| Q12 | State reconstructable deterministically? | Partial, evidence files are not re-derived; only their hashes live in events. |
+| Q13 | Stalled work detected automatically? | No, validate is pull-based. |
+| Q14 | Retried automatically? | No, the lead re-runs validate. |
+| Q15 | Retries survive a restart? | Yes, evidence and events persist on disk. |
+| Q16 | Duplicate work possible? | Yes, nothing prevents validating the same tree twice. |
+| Q17 | Stale worker results mutate newer state? | No, the hash is of the tree as found; a stale result simply will not match. |
+| Q18 | Progress measurable without conversations? | Partial, per-gate rc and duration are surfaced; no trend analysis. |
+
+- Gaps: no timeout or budget on gate commands (a hanging gate hangs validate); gates run with
+  the caller's environment; no diff of gate output between attempts; the owns check has no
+  exemption list beyond flywheel's own files.
+
+### Inspection (`flywheel inspect`)
+
+`InspectTask` is the poka-yoke gate on verdicts. It refuses a verdict outside {pass, rework,
+scrap, escalate} (T8), refuses a missing session or one that belongs to a worker of the task
+(T4, via `sessionClash` — the worker-event set matches verify's ruleT4, so the inspector's own
+inspected events never count), and for a pass verdict demands supervisor readings: a passing
+validated event for every gate in the brief header plus a clean owns_checked, all on the same
+tree hash and all recorded after the task's latest finished event (`requireReadings`,
+`latestFinished`, `hasPassingValidated`, `hasCleanOwnsChecked`). On success it appends an
+inspected event carrying verdict, tree, session and note, and refreshes state
+(internal/flywheel/inspect.go:InspectTask, internal/flywheel/inspect.go:requireReadings,
+internal/flywheel/inspect.go:sessionClash). A refusal is a RuleRefusal error: the CLI exits 6
+with the rule id and the fix, 1 for any other error (cmd/flywheel/inspect_cmd.go:runInspect,
+internal/flywheel/inspect.go:IsRuleRefusal). State maps verdicts pass/rework/scrap/escalate to passed/needs-correction/rejected/blocked (internal/flywheel/state.go:Derive).
+
+- State owned: inspected events (verdict, tree, session, note); status transitions in state.json.
+- Guarantees: no pass without a supervisor reading on the same tree after the latest finished;
+  the inspector session can never collide with a worker session; the tree recorded is the one
+  hashed at inspection time.
+
+| Q | Question | Answer |
+| --- | --- | --- |
+| Q6 | Deterministic? | Yes, all checks compare events and tree hashes. |
+| Q7 | Needs an agent alive? | No, only a --session string is supplied. |
+| Q8 | A worker dies? | Yes, inspection reads events only. |
+| Q9 | The orchestrating process dies? | Partial, a refused inspection records no event; only the final state is in the log. |
+| Q10 | All workers die? | Yes, inspection needs no worker. |
+| Q11 | All LLM providers unavailable? | Yes, verdicts are local decisions. |
+| Q12 | State reconstructable deterministically? | Yes, inspected events replay into status. |
+| Q13 | Stalled work detected automatically? | No, inspection is triggered by the lead. |
+| Q14 | Retried automatically? | No, the lead re-inspects after a rework. |
+| Q15 | Retries survive a restart? | Yes, the recorded session and note persist. |
+| Q16 | Duplicate work possible? | Partial, re-inspecting the same tree appends another event; nothing dedupes. |
+| Q17 | Stale worker results mutate newer state? | Partial, T3 binds readings to the tree after the latest finished, but Derive never checks the inspected tree against the latest dispatch. |
+| Q18 | Progress measurable without conversations? | No, verdicts are binary snapshots. |
+
+- Gaps: nothing checks that a rework delta exists before the next correction dispatch; a pass on
+  an old tree recorded after a newer dispatch still updates state (Derive ignores the tree);
+  the reviewed event kind exists but inspect only writes inspected.
+
+### Verify rules (`flywheel verify`)
+
+`VerifyTasks` replays the event log and checks every requested task (or every task with --all,
+with an empty but valid log verifying clean) against the five implemented poka-yoke rules,
+producing one VerifyItem per check with a reason: T1 every dispatched event's SHA-256 matches
+the prompt it was dispatched with (fresh runs against the planned brief, a later amendment
+explains a change; corrections against the delta file their dispatched.Brief names, and
+amendments never waive a correction's hash); T3 every inspected pass has a passing validated
+event per gate plus a clean owns_checked on the same tree after the latest finished before that
+inspection (each inspection uses its own window, so a later correction attempt does not fail an
+earlier legitimate pass); T4 no inspected event carries a worker session; T5 no landed event
+without an earlier inspected pass; T8 validated and owns_checked carry persona supervisor and
+inspected carries inspector or lead (internal/flywheel/verify.go:VerifyTasks,
+internal/flywheel/verify.go:ruleT1, internal/flywheel/verify.go:ruleT3,
+internal/flywheel/verify.go:ruleT4, internal/flywheel/verify.go:ruleT5,
+internal/flywheel/verify.go:ruleT8). The CLI prints PASS/FAIL per check or emits --json, and
+exits 0 when every check passes, 6 on any failure, 2 on usage, 1 on error
+(cmd/flywheel/verify_cmd.go:runVerify).
+
+- State owned: none — verify only reads the log, the brief and the delta files; the result is
+  printed, never stored.
+- Guarantees: the rules are pure functions of the log plus files on disk; T3 windows are
+  per-inspection; a passing reading always requires the same tree the inspection recorded.
+
+| Q | Question | Answer |
+| --- | --- | --- |
+| Q6 | Deterministic? | Yes, a pure replay of log and files. |
+| Q7 | Needs an agent alive? | No. |
+| Q8 | A worker dies? | Yes, verify reads events only. |
+| Q9 | The orchestrating process dies? | Yes, verify is a stateless read. |
+| Q10 | All workers die? | Yes. |
+| Q11 | All LLM providers unavailable? | Yes. |
+| Q12 | State reconstructable deterministically? | Partial, checks current files against recorded hashes; it restores nothing. |
+| Q13 | Stalled work detected automatically? | No, no liveness checks exist here. |
+| Q14 | Retried automatically? | No. |
+| Q15 | Retries survive a restart? | Yes, the log is the only input. |
+| Q16 | Duplicate work possible? | Partial, T1 flags a mismatched brief, but two identical dispatches both pass. |
+| Q17 | Stale worker results mutate newer state? | No, verify only reports; it never mutates state. |
+| Q18 | Progress measurable without conversations? | No, only pass/fail per rule. |
+
+- Gaps: only T1, T3, T4, T5 and T8 exist in code (the other rules of the design doc are not
+  found in code); needs-before-dispatch ordering is never enforced; a failed verify leaves no
+  event behind.
+
+### Staffing (`flywheel staff`)
+
+`flywheel staff --role <r> --session <s>` registers a factory role on the floor: it appends a
+staffed event carrying session, persona (the role), model and note, re-derives state, and
+prints `<role> <session>`; a missing --role or --session exits 2, other errors exit 1
+(cmd/flywheel/staff_cmd.go:runStaff, cmd/flywheel/staff_cmd.go:staffFlags). A staffed event
+carries no task, so `Derive` skips it and it changes no task status — staffing is a floor-level
+fact visible only in the log (internal/flywheel/state.go:Derive). The floor shows the latest
+staffed event per role — the lead line `<session> (<model>)` or "not registered"
+(internal/flywheel/factory.go:buildStaffing). The lead skill instructs
+`flywheel staff --role lead --session <your session> --model <model>` at session start
+(skills/flywheel/SKILL.md).
+
+- State owned: staffed events; nothing in state.json (no staff list is derived into task state).
+- Guarantees: staffing is append-only like every event; the latest staffed event per role wins
+  on the floor; validation requires a session (and defaults the persona when empty).
+
+| Q | Question | Answer |
+| --- | --- | --- |
+| Q6 | Deterministic? | Yes, an append with fixed fields. |
+| Q7 | Needs an agent alive? | No, it records a claim. |
+| Q8 | A worker dies? | Yes, staffing is inert. |
+| Q9 | The orchestrating process dies? | Yes, the event persists. |
+| Q10 | All workers die? | Yes. |
+| Q11 | All LLM providers unavailable? | Yes. |
+| Q12 | State reconstructable deterministically? | Partial, staffed events replay, but state.json carries no staff list. |
+| Q13 | Stalled work detected automatically? | No. |
+| Q14 | Retried automatically? | No. |
+| Q15 | Retries survive a restart? | Yes, the event persists on disk. |
+| Q16 | Duplicate work possible? | Partial, re-staffing the same role appends another event; latest wins, nothing dedupes. |
+| Q17 | Stale worker results mutate newer state? | No, staffed events are never status-bearing. |
+| Q18 | Progress measurable without conversations? | No, purely a register. |
+
+- Gaps: no expiry or liveness check on registered sessions; a role can staff twice with
+  different sessions; staffing claims are never verified against a live process.
+
+### Git and worktrees
+
+The CLI never creates worktrees and never mutates the shared git index. `treeHash` computes the
+SHA-1 tree id with a throwaway temp index: git read-tree HEAD, git add -A, drop `.flywheel/`
+and `flywheel.md` from the index so flywheel's own bookkeeping never enters a unit's tree, then
+git write-tree, all with GIT_INDEX_FILE pointed at the temp file (internal/flywheel/gauges.go:treeHash,
+internal/flywheel/gauges.go:gitRun). The owns check reads the tree with read-only commands —
+git diff --name-only HEAD plus git ls-files --others --exclude-standard
+(internal/flywheel/gauges.go:changedPaths, internal/flywheel/gauges.go:gitRead).
+`flywheel validate --workdir` and `flywheel inspect --workdir` hash another tree while the log
+and evidence stay in --dir. init consults git only to report which state files git would ignore
+(git check-ignore) (internal/flywheel/init.go:IgnoredStateFiles). Worker isolation: every
+dispatch writes the embedded OpenCode permission policy when missing and points OPENCODE_CONFIG
+at it, denying git stash/reset/checkout/restore/clean/switch/commit/rebase/merge/cherry-pick/
+pull/push and git -C/--work-tree/--git-dir in the worker's shell
+(internal/flywheel/run.go:workerPolicySHA, internal/flywheel/run.go:workerEnv).
+
+- State owned: a temp index file during hashing (removed on return); reads the shared index
+  only through read-tree/write-tree.
+- Guarantees: validate and inspect never modify the shared index or worktree; worker git writes
+  are denied by the permission policy; flywheel's own files never pollute a tree hash.
+
+| Q | Question | Answer |
+| --- | --- | --- |
+| Q6 | Deterministic? | Yes, write-tree output depends only on the tree contents. |
+| Q7 | Needs an agent alive? | No. |
+| Q8 | A worker dies? | Yes, hashing is momentary. |
+| Q9 | The orchestrating process dies? | Partial, a killed hash may orphan a temp index file; the shared index is untouched. |
+| Q10 | All workers die? | Yes. |
+| Q11 | All LLM providers unavailable? | Yes. |
+| Q12 | State reconstructable deterministically? | Partial, tree ids are recomputed on demand, not stored. |
+| Q13 | Stalled work detected automatically? | No. |
+| Q14 | Retried automatically? | No. |
+| Q15 | Retries survive a restart? | Yes, the working tree is the durable object. |
+| Q16 | Duplicate work possible? | Yes, nothing stops hashing the same tree twice. |
+| Q17 | Stale worker results mutate newer state? | No, hashes describe the tree as found. |
+| Q18 | Progress measurable without conversations? | No. |
+
+- Gaps: no worktree isolation at all — in-flight workers share one working tree, so disjoint
+  owns is a brief-level convention, never enforced; no check that the workdir is a git
+  repository before read-tree fails; git must be on PATH.
+
+### Skills (skills/*/SKILL.md)
+
+skills/flywheel/SKILL.md is the lead's operating manual, written as prose: the five-step loop
+Plan → Brief → Dispatch → Review → Correct-or-land, the personas table (lead, planner, foreman,
+worker, supervisor-as-CLI, inspector, auditor, steward, operator), the invariants (approved
+worker model only, orchestrator never implements, worker unavailable → report the blocker and
+halt, no unrequested commits or secrets, every dispatch carries the deny policy), and the
+compact loop with the canonical commands (`flywheel log`/`flywheel run`, OPENCODE_CONFIG
+pointed at skills/flywheel/references/worker-permissions.json, `--variant low`, the session id
+from the JSONL). Its references: references/worker-brief.md (brief template, concurrency and
+dirty-edit rules, run states and failures, review traps, the correction loop, the
+blocker/do-not-take-over protocol), references/factory.md (the shared factory model), and
+references/worker-permissions.json (the deny policy, byte-identical to the embedded policy in
+run.go). The role skills each describe one persona: skills/flywheel-worker/SKILL.md (execute
+exactly the brief, run its gates, report evidence, never commit), skills/flywheel-planner/
+SKILL.md (turn goals into owns/needs/gate work orders, never dispatch),
+skills/flywheel-foreman/SKILL.md (dispatch, watch run states, apply the retry policy, pull the
+andon), skills/flywheel-inspector/SKILL.md (QC verdicts pass/rework/scrap/escalate from gauge
+readings on the same tree), skills/flywheel-auditor/SKILL.md (independent re-measurement, never
+the same session or model as the lead/planner/inspector), skills/flywheel-steward/SKILL.md
+(triage signals into learnings with corrective actions), skills/flywheel-operator/SKILL.md
+(install flywheel, check it is healthy, and drive the loop from any role).
+
+- State owned: none — skills are static files read by agents; skills/flywheel/evals/evals.json
+  holds skill evaluations.
+- Guarantees: the brief contract in prose matches what the CLI enforces (gate lines, owns);
+  the permissions JSON matches the embedded policy byte-for-byte; the loop is documented as
+  prose — the CLI enforces only the subset in verify and inspect.
+
+| Q | Question | Answer |
+| --- | --- | --- |
+| Q6 | Deterministic? | Yes, static text. |
+| Q7 | Needs an agent alive? | Yes, the loop is run by an agent following the prose. |
+| Q8 | A worker dies? | Partial, the skills describe classification and retry; nothing executes them. |
+| Q9 | The orchestrating process dies? | Yes, the files persist for the next session. |
+| Q10 | All workers die? | Yes. |
+| Q11 | All LLM providers unavailable? | Yes, reading a skill needs no provider. |
+| Q12 | State reconstructable deterministically? | Partial, the loop is documented, not stored as state. |
+| Q13 | Stalled work detected automatically? | No, the skill points at the andon; no code watches. |
+| Q14 | Retried automatically? | No, the skill documents manual retry. |
+| Q15 | Retries survive a restart? | Yes, skills are files. |
+| Q16 | Duplicate work possible? | No, the disjoint-ownership rule is prose only. |
+| Q17 | Stale worker results mutate newer state? | No, skills never mutate state. |
+| Q18 | Progress measurable without conversations? | No. |
+
+- Gaps: the retry policy the foreman skill promises is not implemented in code (redispatch is a
+  manual lead decision); the independence rules (auditor never the lead's session or model) are
+  prose, unenforced by the CLI; the worker-permissions.json duplicates the policy embedded in
+  run.go.
+
+## Crash walk-throughs
+
+(a) **A worker is killed mid-run.** Events written: dispatched (before spawn), started when the
+first JSON line arrived, worker_plan when a PLAN line arrived, report when a final text message
+arrived, then finished with rc = the kill's exit code and reason = the last observed step reason,
+or "error"/"start-failed" when no step completed; nothing is missing. `flywheel state` shows the
+task finished with rc and attempts=1; `flywheel factory` shows the unit done with its finish
+reason and it does not appear on the andon. The lead reads the run file and either resumes
+(c1) or scraps (internal/flywheel/run.go:Run).
+
+(b) **`flywheel run` itself is killed.** dispatched is appended before the child starts;
+started/worker_plan/report may or may not follow; the finished event is missing because the
+deferred recorder never runs, and the opencode child is orphaned until it dies or is killed.
+`flywheel state` keeps the last status-bearing event — running if started arrived, dispatched
+otherwise. `flywheel factory` classifies the unit from run-file signals: once the file stops
+growing, the unit shows stalled past 600s (or silent if it never produced output) and the andon
+lists it. The lead kills the leftover process, then resumes with c1 (the recorded session makes
+resume work) (internal/flywheel/factory.go:classifyRun, internal/flywheel/run.go:Run).
+
+(c) **The lead session ends with units queued.** No event kind exists for a lead ending; the
+planned and dispatched events persist untouched. `flywheel state` and `flywheel factory` keep
+showing planned/dispatched/running units exactly as before — nothing expires queued units. A new
+lead session reads the same log and picks up where the old one stopped (state is the repo, not
+any vendor session).
+
+(d) **Every provider returns errors for an hour.** Each dispatched worker exits with provider
+errors: the run records finished with reason "error" (error observations), "start-failed" (exit
+before a step, first stderr line as note) or "silent" (start timeout), and `flywheel run` exits
+4, 3 or 4 respectively (internal/flywheel/run.go:firstStderrLine, internal/flywheel/run.go:ExitCode).
+`flywheel state` shows each task finished with its reason; `flywheel factory` classifies the
+units provider-error and the andon lists them oldest first. No retry policy exists, so nothing
+re-dispatches; the lead waits and resumes with cN once providers recover
+(internal/flywheel/factory.go:buildAndon).
+
+(e) **The machine restarts.** events.jsonl survives except possibly a torn final byte, repaired
+with a newline prefix on the next append; state.json and flywheel.md were written atomically, so
+a crash mid-write leaves the old version (internal/flywheel/events.go:needsNewlinePrefix,
+internal/flywheel/state.go:atomicWrite). In-flight workers die with the machine without a
+finished event — exactly like case (b): `flywheel state` shows running or dispatched, and
+`flywheel factory` shows stalled once the run file stops growing. The next `flywheel state`
+re-derives from the log; the next `flywheel factory` rebuilds the floor from files. Recorded
+sessions survive, so the lead resumes with c1.
+
+## Summary
+
+| Concept | Exists? | Where | Note |
+| --- | --- | --- | --- |
+| goal | no | — | no goal record in code; the lead holds it (not found in code) |
+| plan | yes | worker_plan events + .plan.md files (internal/flywheel/run.go:Run) | recorded when the worker prints a PLAN line |
+| task | yes | task ids in events and state.json (internal/flywheel/state.go:Derive) | pattern ^[A-Za-z0-9._-]+$ |
+| attempt | yes | rN/cN attempt ids on events (internal/flywheel/run.go:attemptNum) | fresh vs correction numbering |
+| worker | yes | workers list in config.json, adapter per run (internal/flywheel/run.go:Run) | opencode or sim |
+| lease | no | — | no lease concept found in code |
+| heartbeat | partial | silent/long-step/stalled signals from run-file age and growth (internal/flywheel/factory.go:classifyRun) | no explicit heartbeat event |
+| retry policy | no | — | no retry policy exists; redispatch is a manual lead decision |
+| reconciler | no | — | nothing reconciles log against files; the lead does it by hand |
+| health | partial | andon list (internal/flywheel/factory.go:buildAndon) | display-only, no alerting |
+| progress vs activity | partial | steps/tokens/cost on finished (internal/flywheel/run.go:Run); growth/age/reads/edits in the factory | both measured, not reconciled into one signal |
+| tree-bound evidence | yes | validated events carry the tree hash; T3 binds readings to it (internal/flywheel/inspect.go:requireReadings) | gates and owns are bound to a tree id |
+| stale-result rejection | partial | T3 per-inspection windows (internal/flywheel/verify.go:ruleT3) | Derive ignores attempt, so a late event from an older attempt wins |
