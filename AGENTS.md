@@ -38,6 +38,10 @@ into every worker's context; Claude Code reads CLAUDE.md, which imports this fil
   (`go run cmd/gofmt`, because gofmt.exe may be blocked), and compare text files with `\r` stripped.
 - Smart App Control sometimes blocks a freshly built binary ("An Application Control policy has
   blocked this file"): that is the host, not the code; rerun. Never change the security setting.
+- Smart App Control can reject a test binary by its hash, persistently (identical code rebuilds
+  to the identical binary, so reruns never help); run a package's tests compiled then executed
+  from its directory: `d=$(mktemp -d); go test -c -o "$d/t.test.exe" ./<pkg> && (cd <pkg> &&
+  "$d/t.test.exe")` (see #101). Never change the security setting.
 
 ## Tests
 
@@ -56,6 +60,9 @@ into every worker's context; Claude Code reads CLAUDE.md, which imports this fil
 - Never mutate the shared git index (use a temporary GIT_INDEX_FILE).
 - Write state files atomically (temp file + rename); the event log (.flywheel/events.jsonl) is
   append-only; read only complete lines from files other processes append to.
+- Bind flags with `fs.StringVar(&o.x, ...)` (or keep the pointer and dereference after Parse);
+  `o.x = *fs.String(...)` freezes the default and silently ignores the flag (it broke every
+  flag of four commands once). Commands share one flag definition between help and run.
 
 ## Commits and PRs
 
@@ -74,7 +81,10 @@ into every worker's context; Claude Code reads CLAUDE.md, which imports this fil
 - Measures with `flywheel validate <id>`.
 - Rules with `flywheel inspect <id> --verdict ... --session <own>`.
 - Checks the log with `flywheel verify`; watches with `flywheel factory --once`.
-- Commit your own edits before `flywheel validate`: its owns check compares the whole tree with HEAD.
+- `flywheel run` records the files already dirty at dispatch, and the owns check ignores them
+  unless the unit changed them (owns-baseline, #96); commit your own edits before
+  `flywheel validate`.
+- `flywheel help <command>` prints any command's flags.
 
 ## Rules for workers
 
