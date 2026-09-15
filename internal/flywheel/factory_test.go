@@ -38,20 +38,23 @@ func andonHas(a []Andon, task string) bool {
 }
 
 func TestStageOf(t *testing.T) {
-	if stageOf("planned") != "planned" {
-		t.Error("stageOf planned != planned")
-	}
-	if stageOf("dispatched") != "building" || stageOf("running") != "building" {
-		t.Error("stageOf in-flight != building")
-	}
-	if stageOf("finished") != "finished" || stageOf("rejected") != "finished" {
-		t.Error("stageOf finished/rejected != finished")
-	}
-	if stageOf("blocked") != "blocked" {
-		t.Error("stageOf blocked != blocked")
-	}
-	if stageOf("landed") != "landed" {
-		t.Error("stageOf landed != landed")
+	for _, tc := range []struct {
+		status string
+		want   string
+	}{
+		{"planned", "planned"},
+		{"dispatched", "building"},
+		{"running", "building"},
+		{"finished", "finished"},
+		{"passed", "passed"},
+		{"needs-correction", "building"},
+		{"rejected", "rejected"},
+		{"blocked", "blocked"},
+		{"landed", "landed"},
+	} {
+		if got := stageOf(tc.status); got != tc.want {
+			t.Errorf("stageOf(%q) = %q, want %q", tc.status, got, tc.want)
+		}
 	}
 }
 

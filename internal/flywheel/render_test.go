@@ -123,6 +123,25 @@ func TestAgeHuman(t *testing.T) {
 	}
 }
 
+func TestRenderTextPassedRejectedStages(t *testing.T) {
+	fl := Floor{
+		Refreshed: time.Date(2026, 9, 12, 1, 0, 0, 0, time.UTC),
+		Units: []Unit{
+			{Task: "p", Stage: "passed", Attempt: "r1", RunState: "done"},
+			{Task: "x", Stage: "rejected", Attempt: "r1", RunState: "done"},
+		},
+	}
+	var buf bytes.Buffer
+	RenderText(&buf, fl, 80, false)
+	out := buf.String()
+	if !strings.Contains(out, "passed") {
+		t.Errorf("passed unit's stage not rendered:\n%s", out)
+	}
+	if !strings.Contains(out, "rejected") {
+		t.Errorf("rejected unit's stage not rendered:\n%s", out)
+	}
+}
+
 func TestRenderOutputFormats(t *testing.T) {
 	fl := Floor{Output: Output{LandedToday: 1, Finished: 1, Rework: 0.33333, Tokens: 260, Cost: 0.001597088}}
 	var buf bytes.Buffer
