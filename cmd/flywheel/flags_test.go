@@ -26,6 +26,7 @@ var allFlagsFuncs = map[string]flagsAny{
 	"land":     func() (*flag.FlagSet, any) { fs, o := landFlags(); return fs, o },
 	"status":   func() (*flag.FlagSet, any) { fs, o := statusFlags(); return fs, o },
 	"goal":     func() (*flag.FlagSet, any) { fs, o := goalFlags(); return fs, o },
+	"handoff":  func() (*flag.FlagSet, any) { fs, o := handoffFlags(); return fs, o },
 }
 
 // optionDir reads the dir an options struct bound; "" when it has no dir.

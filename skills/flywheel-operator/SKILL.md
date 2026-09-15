@@ -43,7 +43,8 @@ planned subcommands land — don't invoke commands that aren't built.
 | `flywheel factory [--once\|--json]` | **implemented** | Render the floor — workers, units with run states, andon, output; bare `flywheel` opens it, one shot when stdout is not a terminal. |
 | `flywheel status [--dir DIR] [--now RFC3339] [--json]` | **implemented** | Summarize the factory deterministically: task counts per status, live and stale attempts, last event and last meaningful progress, andon count. |
 | `flywheel goal add "<title>" --id <id> [--accept CMD]... [--require TASK]...` | **implemented** | Record a factory goal; later add, list, show and set its status with `flywheel goal <add\|list\|show\|set>`. |
-| `flywheel plan`, `retry`, `handoff` | **planned** | Control plane: create tasks, resume, transfer between agents. |
+| `flywheel handoff [--dir DIR] [--stdout]` | **implemented** | Print the handoff summary for a new head — in-flight tasks (with session and model), blockers, next ready tasks and the default worker model; with `--stdout` to stdout, otherwise into `flywheel.md` between the handoff markers. |
+| `flywheel plan`, `retry` | **planned** | Control plane: create tasks, resume, transfer between agents. |
 | `flywheel trace`, `artifacts` | **planned** | Data plane: task positions, worker outputs. |
 
 ## Install
