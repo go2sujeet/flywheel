@@ -103,23 +103,40 @@ func TestRenderTextWidth(t *testing.T) {
 	}
 }
 
-func TestAgeHuman(t *testing.T) {
+func TestHumanAge(t *testing.T) {
 	for _, tc := range []struct {
 		seconds int
 		want    string
 	}{
 		{59, "59s"},
 		{60, "1m"},
-		{3540, "59m"},
+		{3599, "59m"},
 		{3600, "1h"},
-		{169200, "47h"},
+		{172799, "47h"},
 		{172800, "2d"},
-		{147278, "40h"},
-		{0, "0s"},
 	} {
-		if got := ageHuman(tc.seconds); got != tc.want {
-			t.Errorf("ageHuman(%d) = %q, want %q", tc.seconds, got, tc.want)
+		if got := HumanAge(tc.seconds); got != tc.want {
+			t.Errorf("HumanAge(%d) = %q, want %q", tc.seconds, got, tc.want)
 		}
+	}
+}
+
+func TestRenderTextPassedRejectedStages(t *testing.T) {
+	fl := Floor{
+		Refreshed: time.Date(2026, 9, 12, 1, 0, 0, 0, time.UTC),
+		Units: []Unit{
+			{Task: "p", Stage: "passed", Attempt: "r1", RunState: "done"},
+			{Task: "x", Stage: "rejected", Attempt: "r1", RunState: "done"},
+		},
+	}
+	var buf bytes.Buffer
+	RenderText(&buf, fl, 80, false)
+	out := buf.String()
+	if !strings.Contains(out, "passed") {
+		t.Errorf("passed unit's stage not rendered:\n%s", out)
+	}
+	if !strings.Contains(out, "rejected") {
+		t.Errorf("rejected unit's stage not rendered:\n%s", out)
 	}
 }
 

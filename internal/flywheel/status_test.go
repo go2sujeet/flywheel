@@ -185,6 +185,32 @@ func TestStatusEmptyFactory(t *testing.T) {
 	}
 }
 
+// TestStatusAgeUnits pins the text and JSON ages of the last-event lines: the
+// text output renders an 845-second age as "14m ago" (HumanAge), while --json
+// keeps age in whole seconds.
+func TestStatusAgeUnits(t *testing.T) {
+	rep := StatusReport{
+		LastEventAt:    &LastEvent{TS: "2026-09-14T10:00:00Z", Age: 845},
+		LastProgressAt: &LastEvent{TS: "2026-09-14T10:01:00Z", Age: 845},
+	}
+	for name, l := range map[string]*LastEvent{"last event": rep.LastEventAt, "last progress": rep.LastProgressAt} {
+		if got := HumanAge(l.Age); got != "14m" {
+			t.Errorf("%s text age = %q, want 14m", name, got)
+		}
+	}
+	b, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got StatusReport
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.LastEventAt.Age != 845 || got.LastProgressAt.Age != 845 {
+		t.Errorf("json ages = %d/%d, want 845/845 (whole seconds)", got.LastEventAt.Age, got.LastProgressAt.Age)
+	}
+}
+
 // writeLease writes one lease file for the leaseStatusFixture.
 func writeLease(t *testing.T, dir, task, attempt, expiresAt string) {
 	t.Helper()

@@ -15,6 +15,7 @@ type flagsAny func() (*flag.FlagSet, any)
 // guards below can read each command's own bound values. Add new commands.
 var allFlagsFuncs = map[string]flagsAny{
 	"init":     func() (*flag.FlagSet, any) { fs, o := initFlags(); return fs, o },
+	"lint":     func() (*flag.FlagSet, any) { fs, o := lintFlags(); return fs, o },
 	"log":      func() (*flag.FlagSet, any) { fs, o := logFlags(); return fs, o },
 	"state":    func() (*flag.FlagSet, any) { fs, o := stateFlags(); return fs, o },
 	"factory":  func() (*flag.FlagSet, any) { fs, o := factoryFlags(); return fs, o },
@@ -25,7 +26,9 @@ var allFlagsFuncs = map[string]flagsAny{
 	"staff":    func() (*flag.FlagSet, any) { fs, o := staffFlags(); return fs, o },
 	"land":     func() (*flag.FlagSet, any) { fs, o := landFlags(); return fs, o },
 	"status":   func() (*flag.FlagSet, any) { fs, o := statusFlags(); return fs, o },
+	"next":     func() (*flag.FlagSet, any) { fs, o := nextFlags(); return fs, o },
 	"goal":     func() (*flag.FlagSet, any) { fs, o := goalFlags(); return fs, o },
+	"cost":     func() (*flag.FlagSet, any) { fs, o := costFlags(); return fs, o },
 }
 
 // optionDir reads the dir an options struct bound; "" when it has no dir.

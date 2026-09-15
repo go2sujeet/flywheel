@@ -126,5 +126,5 @@ func describeLast(l *flywheel.LastEvent) string {
 	if l == nil {
 		return "(none)"
 	}
-	return fmt.Sprintf("%s (%ds ago)", l.TS, l.Age)
+	return fmt.Sprintf("%s (%s ago)", l.TS, flywheel.HumanAge(l.Age))
 }

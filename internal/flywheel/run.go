@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -551,7 +552,7 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 	}); err != nil {
 		return Result{}, err
 	}
-	progress(o.Progress, o.Task+" "+attempt+fmt.Sprintf(" finished rc=%d reason=%s steps=%d tokens=%s cost=$%g", rc, reason, steps, tokensK(tok), cost))
+	progress(o.Progress, o.Task+" "+attempt+fmt.Sprintf(" finished rc=%d reason=%s steps=%d tokens=%s cost=$%s", rc, reason, steps, tokensK(tok), costK(cost)))
 	_ = RemoveLease(dir, o.Task, attempt)
 	_, _ = WriteState(dir)
 	return Result{Attempt: attempt, Session: session, RC: rc, Reason: reason, Steps: steps, Tokens: tokPtr, Cost: cost}, nil
@@ -688,4 +689,14 @@ func tokensK(t Tokens) string {
 		return fmt.Sprintf("%dk", n/1000)
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+// costK renders the human-line cost with 4 decimal places: the 5th decimal
+// rounds the 4th (0.0015970879999999998 -> 0.0016) but never carries past
+// it (1.23456 -> 1.2345); zero stays "0".
+func costK(c float64) string {
+	if c == 0 {
+		return "0"
+	}
+	return fmt.Sprintf("%.4f", math.Floor(math.Round(c*1e5)/10)/1e4)
 }
