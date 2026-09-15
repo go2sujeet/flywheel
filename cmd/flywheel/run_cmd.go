@@ -38,8 +38,8 @@ func runFlags() (*flag.FlagSet, *runOptions) {
 	fs.StringVar(&o.dir, "dir", ".", "target directory")
 	fs.StringVar(&o.worker, "worker", "", "worker name")
 	fs.StringVar(&o.model, "model", "", "model name")
-	fs.BoolVar(&o.resume, "resume", false, "resume the task's last session")
-	fs.StringVar(&o.delta, "delta", "", "delta brief file")
+	fs.BoolVar(&o.resume, "resume", false, "resume the task's last session with its delta (default .flywheel/briefs/<task>.delta.txt)")
+	fs.StringVar(&o.delta, "delta", "", "delta brief file; always sent as the prompt and dispatched as a correction c<N>; without --resume a fresh session is started")
 	fs.DurationVar(&o.startTimeout, "start-timeout", 60*time.Second, "startup timeout")
 	return fs, o
 }

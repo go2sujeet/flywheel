@@ -22,7 +22,7 @@ type RunOptions struct {
 	Worker       string // worker name; empty selects the default worker
 	Model        string // override; empty uses the worker's model
 	Resume       bool
-	DeltaPath    string // resume prompt; default .flywheel/briefs/<task>.delta.txt
+	DeltaPath    string // correction prompt; on a resume the default is .flywheel/briefs/<task>.delta.txt
 	StartTimeout time.Duration
 	Progress     io.Writer
 	SimDelay     time.Duration // unexported test hook: sim waits before its first line
@@ -138,7 +138,9 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 		return Result{}, fmt.Errorf("task %q has no planned event; record one with: flywheel log --task %s --kind planned --brief <path>", o.Task, o.Task)
 	}
 
-	// Attempt numbering: a fresh run is r<n+1>, a resume c<m+1>.
+	// Attempt numbering: a fresh run is r<n+1>, a correction c<m+1>. The
+	// delta, not the resume flag, makes a dispatch a correction: a given
+	// --delta is always the prompt, with or without --resume.
 	freshN := 0
 	corrN := 0
 	for _, e := range events {
@@ -157,8 +159,8 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 		}
 	}
 	attempt := fmt.Sprintf("r%d", freshN+1)
-	if o.Resume {
-		if lastSession == "" {
+	if o.Resume || o.DeltaPath != "" {
+		if o.Resume && lastSession == "" {
 			return Result{}, &NoWorkerSession{Task: o.Task}
 		}
 		attempt = fmt.Sprintf("c%d", corrN+1)
@@ -520,12 +522,12 @@ func ExitCode(r Result) int {
 	return 4
 }
 
-// promptSource resolves the absolute path of the file to attach: the planned
-// brief on a fresh run, or the --delta file (default
-// .flywheel/briefs/<task>.delta.txt) on a resume.
+// promptSource resolves the absolute path of the file to attach: the --delta
+// file when one is given, the default .flywheel/briefs/<task>.delta.txt on a
+// resume, otherwise the planned brief.
 func promptSource(dir, brief, delta, task string, resume bool) (string, error) {
 	src := brief
-	if resume {
+	if delta != "" || resume {
 		src = delta
 		if src == "" {
 			src = filepath.Join(dir, ".flywheel", "briefs", task+".delta.txt")
