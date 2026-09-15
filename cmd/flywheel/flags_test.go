@@ -24,6 +24,7 @@ var allFlagsFuncs = map[string]flagsAny{
 	"verify":   func() (*flag.FlagSet, any) { fs, o := verifyFlags(); return fs, o },
 	"staff":    func() (*flag.FlagSet, any) { fs, o := staffFlags(); return fs, o },
 	"status":   func() (*flag.FlagSet, any) { fs, o := statusFlags(); return fs, o },
+	"goal":     func() (*flag.FlagSet, any) { fs, o := goalFlags(); return fs, o },
 }
 
 // optionDir reads the dir an options struct bound; "" when it has no dir.
@@ -84,7 +85,7 @@ func TestLogFlagsBindEveryOption(t *testing.T) {
 		"--dir", "X", "--task", "T1", "--kind", "planned", "--brief", "b.txt",
 		"--session", "s", "--model", "m", "--attempt", "r1", "--rc", "0",
 		"--reason", "stop", "--verdict", "pass", "--commit", "c", "--note", "n",
-		"--json", "f", "--no-state",
+		"--goal", "g1", "--json", "f", "--no-state",
 	}
 	fs, o := logFlags()
 	if err := fs.Parse(args); err != nil {
@@ -92,7 +93,7 @@ func TestLogFlagsBindEveryOption(t *testing.T) {
 	}
 	want := logOptions{dir: "X", jsonIn: "f", task: "T1", kind: "planned",
 		session: "s", model: "m", attempt: "r1", rc: "0", reason: "stop",
-		verdict: "pass", brief: "b.txt", commit: "c", note: "n", noState: true}
+		verdict: "pass", brief: "b.txt", commit: "c", note: "n", goal: "g1", noState: true}
 	if *o != want {
 		t.Errorf("logFlags parsed = %#v, want %#v", *o, want)
 	}

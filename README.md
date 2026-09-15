@@ -205,6 +205,7 @@ git still works.*
 | `flywheel land` | planned ([#45](https://github.com/suzworx/flywheel/issues/45)) | Local landing queue: rebase, re-measure, fast-forward. |
 | `flywheel factory` | available | Live terminal dashboard of the floor; bare `flywheel` opens it ([#63](https://github.com/suzworx/flywheel/issues/63)). |
 | `flywheel staff` | available | Register the lead (or another role) on the floor. |
+| `flywheel goal` | available | Manage the factory's goals: add, list, show and set (add, list, show, set). |
 | `flywheel explain`, `flywheel context` | planned ([#58](https://github.com/suzworx/flywheel/issues/58)) | A task's traveler; the factory state sized for a joining agent. |
 | `flywheel trace` | planned ([#62](https://github.com/suzworx/flywheel/issues/62)) | Everything one session did, across tasks. |
 | `flywheel feedback` | planned ([#37](https://github.com/suzworx/flywheel/issues/37)–[#40](https://github.com/suzworx/flywheel/issues/40)) | Turn signals into learnings; export and submit upstream. |
