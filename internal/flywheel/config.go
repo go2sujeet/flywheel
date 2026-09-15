@@ -70,7 +70,7 @@ func DefaultConfig() Config {
 			MaxParallel: 4,
 		}},
 		Feedback: Feedback{
-			Upstream: "go2sujeet/flywheel",
+			Upstream: "suzworx/flywheel",
 			Submit:   "ask",
 		},
 	}
