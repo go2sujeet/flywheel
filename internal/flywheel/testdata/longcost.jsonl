@@ -1,0 +1,1 @@
+{"type":"step_finish","sessionID":"ses_cost_001","part":{"type":"step_finish","reason":"stop","tokens":{"input":120,"output":40,"reasoning":10,"cache":{"read":800,"write":5}},"cost":0.0015970879999999998}}

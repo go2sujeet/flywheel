@@ -49,7 +49,8 @@ Placeholder: completed tasks are logged here.
 // empty). Unrelated files are never touched. A crash mid-write can still
 // leave partial state; retries may need --force.
 func Init(dir string, force bool) (string, error) {
-	return InitSeeded(dir, force, "", "")
+	path, _, err := InitSeeded(dir, force, "", "")
+	return path, err
 }
 
 // InitSeeded is Init with optional model and variant seeding: when either
@@ -57,11 +58,16 @@ func Init(dir string, force bool) (string, error) {
 // config is written from DefaultConfig with the default worker's model
 // and/or variant replaced by the given values (validated through
 // WriteConfig). An existing config.json is never touched, even with --force;
-// the caller says how to edit it.
-func InitSeeded(dir string, force bool, model, variant string) (string, error) {
+// the caller says how to edit it. In addition to Init's return values,
+// InitSeeded reports the relative paths of the scaffold files this call
+// created (flywheel.md, .flywheel/state.json, .flywheel/events.jsonl,
+// .flywheel/config.json, .flywheel/.gitignore; only the ones this call
+// created). An already-initialized directory that creates nothing returns an
+// empty list.
+func InitSeeded(dir string, force bool, model, variant string) (string, []string, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
-		return "", fmt.Errorf("resolve %q: %w", dir, err)
+		return "", nil, fmt.Errorf("resolve %q: %w", dir, err)
 	}
 
 	mdPath := filepath.Join(abs, "flywheel.md")
@@ -73,11 +79,22 @@ func InitSeeded(dir string, force bool, model, variant string) (string, error) {
 	gitattributesPath := filepath.Join(dotFlywheel, ".gitattributes")
 	configPath := filepath.Join(dotFlywheel, configFileName)
 
+	// An already-initialized directory — every scaffold file already present,
+	// and nothing forced — has nothing to do: report success with an empty
+	// created list instead of refusing, so `flywheel init` is idempotent.
+	if !force &&
+		regularFileExists(mdPath) && regularFileExists(statePath) &&
+		regularFileExists(eventsPath) && regularFileExists(configPath) &&
+		regularFileExists(gitignorePath) && regularFileExists(gitattributesPath) &&
+		dirExisted(briefsDir) {
+		return abs, nil, nil
+	}
+
 	// Preflight both file destinations before touching anything so a refusal
 	// preserves the directory exactly as it was.
 	for _, p := range []string{mdPath, statePath} {
 		if err := preflightDestination(p, force); err != nil {
-			return "", err
+			return "", nil, err
 		}
 	}
 
@@ -85,7 +102,7 @@ func InitSeeded(dir string, force bool, model, variant string) (string, error) {
 	mdBytes := []byte(markdownTemplate)
 	stateJSON, err := json.MarshalIndent(Derive([]Event{}), "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("encode state: %w", err)
+		return "", nil, fmt.Errorf("encode state: %w", err)
 	}
 	stateBytes := append(stateJSON, '\n')
 	cfg := DefaultConfig()
@@ -97,7 +114,7 @@ func InitSeeded(dir string, force bool, model, variant string) (string, error) {
 	}
 	configJSON, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("encode config: %w", err)
+		return "", nil, fmt.Errorf("encode config: %w", err)
 	}
 	configBytes := append(configJSON, '\n')
 
@@ -154,19 +171,19 @@ func InitSeeded(dir string, force bool, model, variant string) (string, error) {
 
 	if err := os.MkdirAll(briefsDir, 0o755); err != nil {
 		rollback()
-		return "", fmt.Errorf("create %s: %w", briefsDir, err)
+		return "", nil, fmt.Errorf("create %s: %w", briefsDir, err)
 	}
 
 	createdMD, err = publishFile(mdPath, mdBytes, force)
 	if err != nil {
 		rollback()
-		return "", fmt.Errorf("write %s: %w", mdPath, err)
+		return "", nil, fmt.Errorf("write %s: %w", mdPath, err)
 	}
 
 	createdState, err = publishFile(statePath, stateBytes, force)
 	if err != nil {
 		rollback()
-		return "", fmt.Errorf("write %s: %w", statePath, err)
+		return "", nil, fmt.Errorf("write %s: %w", statePath, err)
 	}
 
 	// The event log is the source of truth: create it and .gitignore only if
@@ -174,7 +191,7 @@ func InitSeeded(dir string, force bool, model, variant string) (string, error) {
 	createdEvents, err = createIfMissing(eventsPath, []byte{})
 	if err != nil {
 		rollback()
-		return "", fmt.Errorf("write %s: %w", eventsPath, err)
+		return "", nil, fmt.Errorf("write %s: %w", eventsPath, err)
 	}
 	// The config is the project configuration: create it from the built-in
 	// default only if missing. It is never overwritten, even with --force.
@@ -184,7 +201,7 @@ func InitSeeded(dir string, force bool, model, variant string) (string, error) {
 		if !configExisted {
 			if err := WriteConfig(dir, cfg); err != nil {
 				rollback()
-				return "", fmt.Errorf("write %s: %w", configPath, err)
+				return "", nil, fmt.Errorf("write %s: %w", configPath, err)
 			}
 			createdConfig = true
 		}
@@ -192,21 +209,38 @@ func InitSeeded(dir string, force bool, model, variant string) (string, error) {
 		createdConfig, err = createIfMissing(configPath, configBytes)
 		if err != nil {
 			rollback()
-			return "", fmt.Errorf("write %s: %w", configPath, err)
+			return "", nil, fmt.Errorf("write %s: %w", configPath, err)
 		}
 	}
 	createdGitignore, err = createIfMissing(gitignorePath, []byte("runs/\n"))
 	if err != nil {
 		rollback()
-		return "", fmt.Errorf("write %s: %w", gitignorePath, err)
+		return "", nil, fmt.Errorf("write %s: %w", gitignorePath, err)
 	}
 	createdGitattributes, err = createIfMissing(gitattributesPath, []byte("* text eol=lf\n"))
 	if err != nil {
 		rollback()
-		return "", fmt.Errorf("write %s: %w", gitattributesPath, err)
+		return "", nil, fmt.Errorf("write %s: %w", gitattributesPath, err)
 	}
 
-	return abs, nil
+	var created []string
+	if createdMD {
+		created = append(created, "flywheel.md")
+	}
+	if createdState {
+		created = append(created, ".flywheel/state.json")
+	}
+	if createdEvents {
+		created = append(created, ".flywheel/events.jsonl")
+	}
+	if createdConfig {
+		created = append(created, ".flywheel/config.json")
+	}
+	if createdGitignore {
+		created = append(created, ".flywheel/.gitignore")
+	}
+
+	return abs, created, nil
 }
 
 // preflightDestination checks that path is a usable regular-file destination
@@ -303,6 +337,14 @@ func snapshotFile(p string) (existed bool, prev []byte) {
 func dirExisted(p string) bool {
 	_, err := os.Lstat(p)
 	return err == nil
+}
+
+// regularFileExists reports whether p exists as a regular file, so the
+// idempotent re-init check refuses to treat directories or symlinks at a
+// scaffold path as "already initialized".
+func regularFileExists(p string) bool {
+	info, err := os.Lstat(p)
+	return err == nil && info.Mode().IsRegular()
 }
 
 // IgnoredStateFiles lists which of the state files init creates git would

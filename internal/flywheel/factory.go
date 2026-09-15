@@ -93,11 +93,11 @@ func stageOf(status string) string {
 	case "finished":
 		return "finished"
 	case "passed":
-		return "finished"
+		return "passed"
 	case "needs-correction":
 		return "building"
 	case "rejected":
-		return "finished"
+		return "rejected"
 	case "blocked":
 		return "blocked"
 	case "landed":

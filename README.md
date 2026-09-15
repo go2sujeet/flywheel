@@ -183,6 +183,16 @@ git still works.*
    workers, and judges the evidence. `flywheel run` records each dispatch automatically; the
    lead records the other events (reviews, landings) with `flywheel log`.
 
+### Upgrading
+
+- Swap the binary; renaming the old executable is safe while a unit runs.
+- Keep symlinked skill installs rather than copies — the skills installer can replace symlinks
+  with copies.
+- Commit `skills-lock.json`, or any tracked file the skills installer touched, before the next
+  `flywheel validate`, because files the lead changes after a unit's dispatch count against that
+  unit's owns check.
+- Run `flywheel status` afterwards.
+
 ## CLI
 
 `flywheel help <command>` (or `<command> -h`) prints any command's flags.
@@ -196,9 +206,12 @@ git still works.*
 | `flywheel config` | available | Read, validate and `set` `.flywheel/config.json` (config package merged). |
 | `flywheel run` | available | Dispatch an OpenCode worker and capture the run. |
 | `flywheel status` | available ([#21](https://github.com/suzworx/flywheel/issues/21)) | Summarize the factory: task counts, live/stale attempts, last event and progress, andon. |
+| `flywheel handoff` | available | Print the handoff summary for a new head: in-flight tasks (with session and model), blockers, next ready tasks, and the default worker model; `--stdout` prints it, otherwise it goes into `flywheel.md`. |
+| `flywheel cost` | available ([#29](https://github.com/suzworx/flywheel/issues/29)) | Sum finished events' tokens and cost per task and per model. |
 | `flywheel next` | available | Print the reconciler's next actions read-only: lost attempts, inspection requests, blocks, waits and dispatches. |
 | `flywheel watch` | planned ([#22](https://github.com/suzworx/flywheel/issues/22)) | Watch the line, one readable line per transition. |
 | `flywheel validate` | available | Machine gauges: run a task's gate: lines on the exact tree and check owns (exit 0/5). |
+| `flywheel lint` | available | Check a brief for problems: owns, gate, goal, report contract, owns paths (exit 0/1). |
 | `flywheel supervise` | planned ([#55](https://github.com/suzworx/flywheel/issues/55)) | Machine gauges: measure finished units, run the gates. |
 | `flywheel verify` | available | Check the event log against the transition rules T1, T3, T4, T5, T8 (exit 0/6). |
 | `flywheel inspect` | available | Inspection verdict, refused unless the gauges' readings cover the tree as it is now (T3/T4/T8; exit 6). |

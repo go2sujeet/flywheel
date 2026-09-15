@@ -176,6 +176,15 @@ func runConfigValidate(args []string) {
 		fmt.Fprintf(os.Stderr, "flywheel config validate: %v\n", err)
 		os.Exit(1)
 	}
+	approved := 0
+	for _, w := range cfg.Workers {
+		for _, fb := range w.Fallbacks {
+			if fb.Approved {
+				approved++
+			}
+		}
+	}
+	fmt.Printf("config ok: %d worker(s), %d approved fallback(s)\n", len(cfg.Workers), approved)
 }
 
 // configError prints a usage-level error for a config subcommand and exits 2.
