@@ -183,8 +183,7 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 	}
 	runName := o.Task + "." + attempt + ".jsonl"
 	runRel := ".flywheel/runs/" + runName
-	promptSum := sha256.Sum256([]byte(prompt))
-	promptSHA := hex.EncodeToString(promptSum[:])
+	promptSHA := contentSHA([]byte(prompt))
 
 	// Worker permission policy (issue #68): write the embedded default policy
 	// if missing and point OPENCODE_CONFIG at it. Never edit the user's own

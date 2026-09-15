@@ -70,6 +70,7 @@ func InitSeeded(dir string, force bool, model, variant string) (string, error) {
 	statePath := filepath.Join(dotFlywheel, "state.json")
 	eventsPath := filepath.Join(dotFlywheel, "events.jsonl")
 	gitignorePath := filepath.Join(dotFlywheel, ".gitignore")
+	gitattributesPath := filepath.Join(dotFlywheel, ".gitattributes")
 	configPath := filepath.Join(dotFlywheel, configFileName)
 
 	// Preflight both file destinations before touching anything so a refusal
@@ -114,6 +115,7 @@ func InitSeeded(dir string, force bool, model, variant string) (string, error) {
 	createdState := false
 	createdEvents := false
 	createdGitignore := false
+	createdGitattributes := false
 	createdConfig := false
 
 	// rollback undoes this call's own footprint after an error: restore
@@ -135,6 +137,9 @@ func InitSeeded(dir string, force bool, model, variant string) (string, error) {
 		}
 		if createdGitignore {
 			_ = os.Remove(gitignorePath)
+		}
+		if createdGitattributes {
+			_ = os.Remove(gitattributesPath)
 		}
 		if createdConfig {
 			_ = os.Remove(configPath)
@@ -194,6 +199,11 @@ func InitSeeded(dir string, force bool, model, variant string) (string, error) {
 	if err != nil {
 		rollback()
 		return "", fmt.Errorf("write %s: %w", gitignorePath, err)
+	}
+	createdGitattributes, err = createIfMissing(gitattributesPath, []byte("* text eol=lf\n"))
+	if err != nil {
+		rollback()
+		return "", fmt.Errorf("write %s: %w", gitattributesPath, err)
 	}
 
 	return abs, nil

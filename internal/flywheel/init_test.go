@@ -23,7 +23,7 @@ func TestInitCreatesScaffold(t *testing.T) {
 		t.Fatalf("Init() = %q, want %q", got, dir)
 	}
 
-	for _, f := range []string{"flywheel.md", ".flywheel/state.json", ".flywheel/events.jsonl", ".flywheel/.gitignore", ".flywheel/briefs"} {
+	for _, f := range []string{"flywheel.md", ".flywheel/state.json", ".flywheel/events.jsonl", ".flywheel/.gitignore", ".flywheel/.gitattributes", ".flywheel/briefs"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("Init() did not create %s: %v", f, err)
 		}
@@ -445,6 +445,42 @@ func TestInitCreatesEventLogAndGitignore(t *testing.T) {
 	}
 }
 
+func TestInitWritesGitattributes(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".flywheel", ".gitattributes"))
+	if err != nil {
+		t.Fatalf("read .gitattributes: %v", err)
+	}
+	if string(b) != "* text eol=lf\n" {
+		t.Errorf(".gitattributes = %q, want '* text eol=lf'", b)
+	}
+}
+
+func TestInitForceLeavesExistingGitattributesUntouched(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	path := filepath.Join(dir, ".flywheel", ".gitattributes")
+	custom := []byte("*.txt eol=crlf\n")
+	if err := os.WriteFile(path, custom, 0o644); err != nil {
+		t.Fatalf("write custom .gitattributes: %v", err)
+	}
+	if _, err := Init(dir, true); err != nil {
+		t.Fatalf("Init() --force error = %v", err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("re-read .gitattributes: %v", err)
+	}
+	if string(b) != string(custom) {
+		t.Error("--force overwrote an existing .gitattributes")
+	}
+}
+
 func TestInitForceLeavesExistingEventLogUntouched(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Init(dir, false); err != nil {
@@ -522,6 +558,25 @@ func TestInitRollbackRemovesCreatedConfig(t *testing.T) {
 	// Block .flywheel/.gitignore with a directory so Init fails after the
 	// config.json it created.
 	block := filepath.Join(dir, ".flywheel", ".gitignore")
+	if err := os.MkdirAll(block, 0o755); err != nil {
+		t.Fatalf("mkdir block: %v", err)
+	}
+	if _, err := Init(dir, false); err == nil {
+		t.Skip("Init() did not fail; skipping rollback assertion")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".flywheel", "config.json")); !os.IsNotExist(err) {
+		t.Error("config.json left behind after rollback")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "flywheel.md")); !os.IsNotExist(err) {
+		t.Error("flywheel.md left behind after rollback")
+	}
+}
+
+func TestInitRollbackRemovesCreatedGitattributes(t *testing.T) {
+	dir := t.TempDir()
+	// Block .flywheel/.gitattributes with a directory so Init fails after
+	// the config.json it created.
+	block := filepath.Join(dir, ".flywheel", ".gitattributes")
 	if err := os.MkdirAll(block, 0o755); err != nil {
 		t.Fatalf("mkdir block: %v", err)
 	}
