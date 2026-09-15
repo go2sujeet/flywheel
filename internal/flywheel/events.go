@@ -24,32 +24,34 @@ type Tokens struct {
 // Event is one JSON object per line in .flywheel/events.jsonl. The event log
 // is the source of truth; state.json and flywheel.md are derived from it.
 type Event struct {
-	TS         string   `json:"ts"`
-	Task       string   `json:"task"`
-	Kind       string   `json:"kind"`
-	Session    string   `json:"session,omitempty"`
-	Model      string   `json:"model,omitempty"`
-	Attempt    string   `json:"attempt,omitempty"`
-	RC         *int     `json:"rc,omitempty"`
-	Reason     string   `json:"reason,omitempty"`
-	Verdict    string   `json:"verdict,omitempty"`
-	Brief      string   `json:"brief,omitempty"`
-	Needs      []string `json:"needs,omitempty"`
-	Owns       []string `json:"owns,omitempty"`
-	Commit     string   `json:"commit,omitempty"`
-	Note       string   `json:"note,omitempty"`
-	Adapter    string   `json:"adapter,omitempty"`
-	Path       string   `json:"path,omitempty"`
-	SHA256     string   `json:"sha256,omitempty"`
-	Tokens     *Tokens  `json:"tokens,omitempty"`
-	Cost       float64  `json:"cost,omitempty"`
-	Steps      int      `json:"steps,omitempty"`
-	Tree       string   `json:"tree,omitempty"`
-	Gate       string   `json:"gate,omitempty"`
-	Command    string   `json:"command,omitempty"`
-	DurationMS int64    `json:"duration_ms,omitempty"`
-	Outside    []string `json:"outside,omitempty"`
-	Persona    string   `json:"persona,omitempty"`
+	TS         string            `json:"ts"`
+	Task       string            `json:"task"`
+	Kind       string            `json:"kind"`
+	Session    string            `json:"session,omitempty"`
+	Model      string            `json:"model,omitempty"`
+	Attempt    string            `json:"attempt,omitempty"`
+	RC         *int              `json:"rc,omitempty"`
+	Reason     string            `json:"reason,omitempty"`
+	Verdict    string            `json:"verdict,omitempty"`
+	Brief      string            `json:"brief,omitempty"`
+	Needs      []string          `json:"needs,omitempty"`
+	Owns       []string          `json:"owns,omitempty"`
+	Commit     string            `json:"commit,omitempty"`
+	Note       string            `json:"note,omitempty"`
+	Adapter    string            `json:"adapter,omitempty"`
+	Path       string            `json:"path,omitempty"`
+	SHA256     string            `json:"sha256,omitempty"`
+	Tokens     *Tokens           `json:"tokens,omitempty"`
+	Cost       float64           `json:"cost,omitempty"`
+	Steps      int               `json:"steps,omitempty"`
+	Tree       string            `json:"tree,omitempty"`
+	Gate       string            `json:"gate,omitempty"`
+	Command    string            `json:"command,omitempty"`
+	DurationMS int64             `json:"duration_ms,omitempty"`
+	Outside    []string          `json:"outside,omitempty"`
+	Baseline   map[string]string `json:"baseline,omitempty"`
+	Baselined  []string          `json:"baselined,omitempty"`
+	Persona    string            `json:"persona,omitempty"`
 }
 
 // kinds is the set of event kinds understood by Derive.
@@ -67,6 +69,7 @@ var kinds = map[string]bool{
 	"validated":    true,
 	"owns_checked": true,
 	"inspected":    true,
+	"staffed":      true,
 }
 
 // isTaskChar reports whether c is allowed in a task id: ^[A-Za-z0-9._-]+$.
@@ -102,13 +105,18 @@ func attemptOK(s string) bool {
 }
 
 // Validate enforces the task pattern, the attempt pattern, the kind set and
-// the reviewed-requires-verdict rule.
+// the reviewed-requires-verdict rule. staffed is a floor-level event: it may
+// carry an empty task (every other kind requires one) but must carry a
+// session.
 func Validate(e Event) error {
-	if !taskOK(e.Task) {
+	if e.Kind != "staffed" && !taskOK(e.Task) {
 		return fmt.Errorf("event task %q does not match ^[A-Za-z0-9._-]+$", e.Task)
 	}
+	if e.Kind == "staffed" && e.Session == "" {
+		return fmt.Errorf("staffed event must carry a session")
+	}
 	if !kinds[e.Kind] {
-		return fmt.Errorf("event kind %q is not one of planned, dispatched, started, worker_plan, finished, report, reviewed, blocked, landed, amended, validated, owns_checked, inspected", e.Kind)
+		return fmt.Errorf("event kind %q is not one of planned, dispatched, started, worker_plan, finished, report, reviewed, blocked, landed, amended, validated, owns_checked, inspected, staffed", e.Kind)
 	}
 	if e.Attempt != "" && !attemptOK(e.Attempt) {
 		return fmt.Errorf("event attempt %q does not match ^[rc][0-9]+$", e.Attempt)
@@ -175,6 +183,9 @@ func needsNewlinePrefix(path string) (bool, error) {
 // .flywheel/events.jsonl with a single O_APPEND write. If the file ends in a
 // torn (non-newline) byte, the same write is prefixed with a newline.
 func AppendEvent(dir string, e Event) error {
+	if e.Kind == "staffed" && e.Persona == "" {
+		e.Persona = "lead"
+	}
 	if err := Validate(e); err != nil {
 		return err
 	}

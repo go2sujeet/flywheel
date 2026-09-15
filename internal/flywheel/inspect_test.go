@@ -166,3 +166,23 @@ func TestInspectMatchesValidateWorkdir(t *testing.T) {
 		t.Fatalf("InspectTask() error = %v (workdir tree should match validate)", err)
 	}
 }
+
+// TestInspectReworkThenPassSameSession checks that an inspector session is
+// never mistaken for a worker session: after a rework, the same inspector can
+// pass with the same session once the readings hold.
+func TestInspectReworkThenPassSameSession(t *testing.T) {
+	dir, err := initTask(t, []string{"exit 0"})
+	if err != nil {
+		t.Fatalf("initTask() error = %v", err)
+	}
+	logFinished(t, dir, "T1", "w1")
+	if err := InspectTask(dir, "T1", InspectOptions{Dir: dir, Verdict: "rework", Session: "i1"}); err != nil {
+		t.Fatalf("InspectTask() rework error = %v", err)
+	}
+	if _, err := ValidateTask(dir, "T1", ValidateOptions{Dir: dir}); err != nil {
+		t.Fatalf("ValidateTask() error = %v", err)
+	}
+	if err := InspectTask(dir, "T1", InspectOptions{Dir: dir, Verdict: "pass", Session: "i1"}); err != nil {
+		t.Fatalf("InspectTask() pass with the same inspector session refused: %v", err)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,16 +35,6 @@ func simConfig(model string) Config {
 		Version: 1,
 		Workers: []Worker{{Name: "sim", Adapter: "sim", Model: model}},
 	}
-}
-
-// shaOf returns the hex SHA-256 of the file at path.
-func shaOf(path string, t *testing.T) string {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
 }
 
 // normLF normalises \r\n to \n so fixture bytes compare equal on CRLF
@@ -102,6 +93,9 @@ func TestRunSimClean(t *testing.T) {
 		d.Model != model || d.Path != ".flywheel/runs/T1.r1.jsonl" ||
 		d.SHA256 != hex.EncodeToString(briefSum[:]) {
 		t.Errorf("dispatched event = %v", d)
+	}
+	if d.Brief != "b.txt" {
+		t.Errorf("dispatched brief = %q, want the repo-relative prompt path b.txt", d.Brief)
 	}
 	policyB, err := os.ReadFile(filepath.Join(dir, ".flywheel", "opencode-worker.json"))
 	if err != nil {
@@ -213,6 +207,28 @@ func TestRunSimAttemptNumbering(t *testing.T) {
 	if resC1.Session != "ses_test_clean_001" {
 		t.Errorf("c1 session = %q, want ses_test_clean_001", resC1.Session)
 	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	var r1d, c1d Event
+	for _, e := range evs {
+		if e.Kind != "dispatched" {
+			continue
+		}
+		if e.Attempt == "r1" {
+			r1d = e
+		}
+		if e.Attempt == "c1" {
+			c1d = e
+		}
+	}
+	if r1d.Brief != "b.txt" {
+		t.Errorf("fresh dispatched brief = %q, want b.txt", r1d.Brief)
+	}
+	if c1d.Brief != ".flywheel/briefs/T1.delta.txt" {
+		t.Errorf("resume dispatched brief = %q, want .flywheel/briefs/T1.delta.txt", c1d.Brief)
+	}
 }
 
 func TestRunResumeWithoutSessionErrors(t *testing.T) {
@@ -224,8 +240,35 @@ func TestRunResumeWithoutSessionErrors(t *testing.T) {
 	_, err := Run(dir, RunOptions{Task: "T1", Resume: true, Progress: &buf})
 	if err == nil {
 		t.Fatal("Run() resume without a session: got nil error, want refusal")
-	} else if !strings.Contains(err.Error(), "no session") {
-		t.Errorf("Run() error = %v, want 'no session'", err)
+	}
+	if !strings.Contains(err.Error(), "no worker session") {
+		t.Errorf("Run() error = %v, want 'no worker session'", err)
+	}
+	var e *NoWorkerSession
+	if !errors.As(err, &e) {
+		t.Errorf("Run() error = %v, want the NoWorkerSession refusal", err)
+	}
+	if e.Task != "T1" {
+		t.Errorf("refusal task = %q, want T1", e.Task)
+	}
+}
+
+func TestRunResumeWithoutSessionRecordsNoEvents(t *testing.T) {
+	dir := setupTask(t)
+	if err := WriteConfig(dir, simConfig(fixturePath("clean.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	var buf bytes.Buffer
+	_, err := Run(dir, RunOptions{Task: "T1", Resume: true, Progress: &buf})
+	if err == nil {
+		t.Fatal("Run() resume without a session: got nil error, want refusal")
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	if len(evs) != 1 || evs[0].Kind != "planned" {
+		t.Errorf("events = %v, want only the planned event (the refusal must record nothing)", evs)
 	}
 }
 
@@ -243,6 +286,53 @@ func TestRunUnplannedTaskErrors(t *testing.T) {
 		t.Fatal("Run() unplanned task: got nil error, want refusal")
 	} else if !strings.Contains(err.Error(), "no planned event") {
 		t.Errorf("Run() error = %v, want 'no planned event'", err)
+	}
+}
+
+// TestRunRecordsBaseline checks a dispatch in a git repo hashes every dirty
+// path and records the baseline on the dispatched event.
+func TestRunRecordsBaseline(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	git(t, dir, []string{"init", "-q"})
+	git(t, dir, []string{"config", "core.autocrlf", "false"})
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(".flywheel/\nflywheel.md\n"), 0o644); err != nil {
+		t.Fatalf("write .gitignore: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package x\n"), 0o644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("one line brief\n"), 0o644); err != nil {
+		t.Fatalf("write brief: %v", err)
+	}
+	git(t, dir, []string{"add", "-A"})
+	git(t, dir, []string{"commit", "-m", "init"})
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T00:00:00Z", Task: "T1", Kind: "planned", Brief: "b.txt"}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "dirty.go"), []byte("package y\n"), 0o644); err != nil {
+		t.Fatalf("write dirty.go: %v", err)
+	}
+	if err := WriteConfig(dir, simConfig(fixturePath("clean.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	var buf bytes.Buffer
+	if _, err := Run(dir, RunOptions{Task: "T1", Progress: &buf}); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	d := evs[1]
+	if d.Kind != "dispatched" {
+		t.Fatalf("evs[1] = %v, want the dispatched event", d)
+	}
+	want := shaOf(filepath.Join(dir, "dirty.go"), t)
+	if len(d.Baseline) != 1 || d.Baseline["dirty.go"] != want {
+		t.Errorf("dispatched baseline = %v, want {dirty.go: %q}", d.Baseline, want)
 	}
 }
 
@@ -443,6 +533,45 @@ func TestRunCommandSessionOnlyOnResume(t *testing.T) {
 	}
 }
 
+func TestRunResumeAfterInspectedUsesWorkerSession(t *testing.T) {
+	dir := setupTask(t)
+	if err := WriteConfig(dir, simConfig(fixturePath("clean.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	delta := filepath.Join(dir, ".flywheel", "briefs", "T1.delta.txt")
+	if err := os.MkdirAll(filepath.Dir(delta), 0o755); err != nil {
+		t.Fatalf("mkdir briefs: %v", err)
+	}
+	if err := os.WriteFile(delta, []byte("fix it\n"), 0o644); err != nil {
+		t.Fatalf("write delta: %v", err)
+	}
+	var got []RunRequest
+	commandHook = func(req RunRequest) { got = append(got, req) }
+	defer func() { commandHook = nil }()
+
+	var buf bytes.Buffer
+	if _, err := Run(dir, RunOptions{Task: "T1", Progress: &buf}); err != nil {
+		t.Fatalf("Run() fresh error = %v", err)
+	}
+	// An inspector reworks with its own session; the resume must still pick
+	// up the worker session, never the inspector's.
+	if err := AppendEvent(dir, Event{
+		TS: "2026-09-12T01:00:00Z", Task: "T1", Kind: "inspected",
+		Verdict: "rework", Session: "i1", Persona: "inspector",
+	}); err != nil {
+		t.Fatalf("AppendEvent() inspected error = %v", err)
+	}
+	if _, err := Run(dir, RunOptions{Task: "T1", Resume: true, Progress: &buf}); err != nil {
+		t.Fatalf("Run() resume error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("commandHook captured %d requests, want 2", len(got))
+	}
+	if got[1].Session != "ses_test_clean_001" {
+		t.Errorf("resume session = %q, want the worker session ses_test_clean_001, not the inspector session i1", got[1].Session)
+	}
+}
+
 func TestRunMissingFixtureRecordsFinished(t *testing.T) {
 	dir := setupTask(t)
 	if err := WriteConfig(dir, simConfig(filepath.Join(dir, "nope.jsonl"))); err != nil {
@@ -479,5 +608,121 @@ func TestWorkerEnvUsesAbsoluteConfigPath(t *testing.T) {
 	}
 	if !filepath.IsAbs(found) {
 		t.Errorf("OPENCODE_CONFIG = %q, want an absolute path", found)
+	}
+}
+
+// TestRunDispatchedPreservesExternalBriefPath checks a planned brief outside
+// the repo keeps its absolute path in dispatched.Brief.
+func TestRunDispatchedPreservesExternalBriefPath(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	ext := t.TempDir()
+	briefPath := filepath.Join(ext, "external.txt")
+	if err := os.WriteFile(briefPath, []byte("external brief\n"), 0o644); err != nil {
+		t.Fatalf("write external brief: %v", err)
+	}
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T00:00:00Z", Task: "T1", Kind: "planned", Brief: briefPath}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	if err := WriteConfig(dir, simConfig(fixturePath("clean.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	var buf bytes.Buffer
+	if _, err := Run(dir, RunOptions{Task: "T1", Progress: &buf}); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	if d := evs[1]; d.Kind != "dispatched" || d.Brief != briefPath {
+		t.Errorf("dispatched = %v, want the external brief %q preserved", d, briefPath)
+	}
+}
+
+// TestRunStartFailedOnEmptyFixture checks a worker that exits before any
+// completed step records finished reason start-failed.
+func TestRunStartFailedOnEmptyFixture(t *testing.T) {
+	dir := setupTask(t)
+	if err := WriteConfig(dir, simConfig(fixturePath("empty.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	var buf bytes.Buffer
+	res, err := Run(dir, RunOptions{Task: "T1", Progress: &buf})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if res.Reason != "start-failed" {
+		t.Errorf("reason = %q, want start-failed", res.Reason)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	f := evs[len(evs)-1]
+	if f.Kind != "finished" || f.Reason != "start-failed" {
+		t.Errorf("finished event = %v, want reason start-failed", f)
+	}
+	if f.Note != "" {
+		t.Errorf("finished note = %q, want empty (no stderr)", f.Note)
+	}
+}
+
+// TestRunStartFailedOnFailedFixture checks a worker that emits output but
+// exits before any completed step also records start-failed.
+func TestRunStartFailedOnFailedFixture(t *testing.T) {
+	dir := setupTask(t)
+	if err := WriteConfig(dir, simConfig(fixturePath("start-failed.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	var buf bytes.Buffer
+	res, err := Run(dir, RunOptions{Task: "T1", Progress: &buf})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if res.Reason != "start-failed" || res.Steps != 0 {
+		t.Errorf("reason/steps = %q/%d, want start-failed/0", res.Reason, res.Steps)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	f := evs[len(evs)-1]
+	if f.Kind != "finished" || f.Reason != "start-failed" {
+		t.Errorf("finished event = %v, want reason start-failed", f)
+	}
+}
+
+// TestRunStartFailedTruncatesStderrNote checks the finished note carries the
+// first nonempty stderr line, trimmed to at most 200 characters.
+func TestRunStartFailedTruncatesStderrNote(t *testing.T) {
+	dir := setupTask(t)
+	if err := WriteConfig(dir, simConfig(fixturePath("empty.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	// Pre-seed the attempt's stderr file the way the opencode adapter would;
+	// a sim run never touches it, and the start-failed note reads it.
+	errPath := filepath.Join(dir, ".flywheel", "runs", "T1.r1.err")
+	if err := os.MkdirAll(filepath.Dir(errPath), 0o755); err != nil {
+		t.Fatalf("mkdir runs: %v", err)
+	}
+	seed := "   \n" + strings.Repeat("y", 220) + "\nsecond stderr line\n"
+	if err := os.WriteFile(errPath, []byte(seed), 0o644); err != nil {
+		t.Fatalf("write stderr: %v", err)
+	}
+	var buf bytes.Buffer
+	if _, err := Run(dir, RunOptions{Task: "T1", Progress: &buf}); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	f := evs[len(evs)-1]
+	want := strings.Repeat("y", 200)
+	if f.Kind != "finished" || f.Reason != "start-failed" || f.Note != want {
+		t.Errorf("finished = %v, want start-failed with note %q", f, want)
 	}
 }

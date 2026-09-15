@@ -185,13 +185,15 @@ git still works.*
 
 ## CLI
 
+`flywheel help <command>` (or `<command> -h`) prints any command's flags.
+
 | Command | Status | What it does |
 | --- | --- | --- |
 | `flywheel version` | available (v0.2.0) | Print the flywheel version. |
 | `flywheel init` | available (v0.2.0) | Scaffold `flywheel.md` + `.flywheel/state.json` + `.flywheel/events.jsonl` + `.flywheel/briefs/`. |
 | `flywheel log` | available (v0.2.0) | Append an event to `.flywheel/events.jsonl` and re-derive state. |
 | `flywheel state` | available (v0.2.0) | Derive and print state from the event log. |
-| `flywheel config` | available | Read and validate `.flywheel/config.json` (config package merged). |
+| `flywheel config` | available | Read, validate and `set` `.flywheel/config.json` (config package merged). |
 | `flywheel run` | available | Dispatch an OpenCode worker and capture the run. |
 | `flywheel status` | planned ([#21](https://github.com/suzworx/flywheel/issues/21)) | Classify the state of runs and tasks. |
 | `flywheel watch` | planned ([#22](https://github.com/suzworx/flywheel/issues/22)) | Watch the line, one readable line per transition. |
@@ -202,6 +204,7 @@ git still works.*
 | `flywheel audit` | planned ([#61](https://github.com/suzworx/flywheel/issues/61)) | External audit of first articles and samples. |
 | `flywheel land` | planned ([#45](https://github.com/suzworx/flywheel/issues/45)) | Local landing queue: rebase, re-measure, fast-forward. |
 | `flywheel factory` | available | Live terminal dashboard of the floor; bare `flywheel` opens it ([#63](https://github.com/suzworx/flywheel/issues/63)). |
+| `flywheel staff` | available | Register the lead (or another role) on the floor. |
 | `flywheel explain`, `flywheel context` | planned ([#58](https://github.com/suzworx/flywheel/issues/58)) | A task's traveler; the factory state sized for a joining agent. |
 | `flywheel trace` | planned ([#62](https://github.com/suzworx/flywheel/issues/62)) | Everything one session did, across tasks. |
 | `flywheel feedback` | planned ([#37](https://github.com/suzworx/flywheel/issues/37)–[#40](https://github.com/suzworx/flywheel/issues/40)) | Turn signals into learnings; export and submit upstream. |

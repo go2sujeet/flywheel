@@ -257,6 +257,90 @@ func (c Config) validKeys() []string {
 	return keys
 }
 
+// Set assigns value to the given configuration key. Bare worker keys apply to
+// the default worker; every worker key is also addressable as
+// workers.<name>.<key>. The settable keys are model, variant, adapter,
+// max_parallel (worker), feedback.upstream, feedback.submit, and
+// limits.per_host. Integer keys parse with strconv.Atoi. fallbacks is not
+// settable here and directs the caller to edit .flywheel/config.json.
+// Validation is left to WriteConfig.
+func (c *Config) Set(key, value string) error {
+	if rest, ok := strings.CutPrefix(key, "workers."); ok {
+		if dot := strings.IndexByte(rest, '.'); dot > 0 {
+			for i := range c.Workers {
+				if c.Workers[i].Name == rest[:dot] {
+					return setWorkerValue(&c.Workers[i], rest[dot+1:], value)
+				}
+			}
+		}
+		return c.settableErr(key)
+	}
+	switch key {
+	case "model", "variant", "adapter", "max_parallel":
+		if len(c.Workers) == 0 {
+			return c.settableErr(key)
+		}
+		return setWorkerValue(&c.Workers[0], key, value)
+	case "feedback.upstream":
+		c.Feedback.Upstream = value
+		return nil
+	case "feedback.submit":
+		c.Feedback.Submit = value
+		return nil
+	case "limits.per_host":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("limits.per_host: value %q must be an integer", value)
+		}
+		c.Limits.PerHost = n
+		return nil
+	case "fallbacks", "fallbacks.all":
+		return fmt.Errorf("%s: not settable; edit .flywheel/config.json", key)
+	}
+	return c.settableErr(key)
+}
+
+// setWorkerValue assigns a worker-scoped value, parsing integer keys.
+func setWorkerValue(w *Worker, key, value string) error {
+	switch key {
+	case "model":
+		w.Model = value
+	case "variant":
+		w.Variant = value
+	case "adapter":
+		w.Adapter = value
+	case "max_parallel":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("max_parallel: value %q must be an integer", value)
+		}
+		w.MaxParallel = n
+	default:
+		return fmt.Errorf("unknown key %q; valid worker keys: model, variant, adapter, max_parallel", key)
+	}
+	return nil
+}
+
+// settableErr lists the keys Set accepts for an unrecognized key.
+func (c Config) settableErr(key string) error {
+	return fmt.Errorf("unknown key %q; settable keys: %s", key, strings.Join(c.settableKeys(), ", "))
+}
+
+// settableKeys lists every key Set accepts, including each worker's keys.
+func (c Config) settableKeys() []string {
+	keys := []string{
+		"adapter", "feedback.submit", "feedback.upstream", "limits.per_host",
+		"max_parallel", "model", "variant",
+	}
+	for _, w := range c.Workers {
+		for _, k := range []string{"adapter", "max_parallel", "model", "variant"} {
+			keys = append(keys, "workers."+w.Name+"."+k)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // WriteConfig validates c and writes it to <dir>/.flywheel/config.json as
 // 2-space-indented JSON with a trailing newline. The write goes through a
 // temp file and rename so readers never observe partial output; .flywheel/ is

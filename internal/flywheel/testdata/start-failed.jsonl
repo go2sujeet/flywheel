@@ -1,0 +1,2 @@
+{"type":"step_start","sessionID":"ses_test_fail_004","part":{"type":"step_start","step":1,"startTime":"2026-09-12T00:00:00Z"},"time":{"startedAt":"2026-09-12T00:00:00Z"}}
+{"type":"text","sessionID":"ses_test_fail_004","part":{"type":"text","text":"Looking around, then the worker stopped before any step finished."}}

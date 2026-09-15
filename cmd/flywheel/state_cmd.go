@@ -13,6 +13,23 @@ import (
 
 func init() {
 	register("state", "derive and print flywheel state", runState)
+	registerHelp("state", "flywheel state [flags]", func() *flag.FlagSet { fs, _ := stateFlags(); return fs })
+}
+
+// stateOptions holds the parsed state flags.
+type stateOptions struct {
+	dir    string
+	asJSON bool
+}
+
+// stateFlags defines state's flags once, so help and run share them.
+func stateFlags() (*flag.FlagSet, *stateOptions) {
+	fs := flag.NewFlagSet("state", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	o := &stateOptions{}
+	fs.StringVar(&o.dir, "dir", ".", "target directory")
+	fs.BoolVar(&o.asJSON, "json", false, "print the derived state as JSON")
+	return fs, o
 }
 
 func countKeys(m map[string]int) []string {
@@ -24,10 +41,7 @@ func countKeys(m map[string]int) []string {
 }
 
 func runState(args []string) {
-	fs := flag.NewFlagSet("state", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	dir := fs.String("dir", ".", "target directory (default: current working directory)")
-	asJSON := fs.Bool("json", false, "print the derived state as JSON")
+	fs, o := stateFlags()
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "flywheel state: %v\n", err)
 		usage(os.Stderr)
@@ -38,12 +52,12 @@ func runState(args []string) {
 		usage(os.Stderr)
 		os.Exit(2)
 	}
-	st, err := flywheel.WriteState(*dir)
+	st, err := flywheel.WriteState(o.dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "flywheel state: %v\n", err)
 		os.Exit(1)
 	}
-	if *asJSON {
+	if o.asJSON {
 		b, err := json.MarshalIndent(st, "", "  ")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "flywheel state: %v\n", err)

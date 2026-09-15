@@ -4,10 +4,12 @@ description: >-
   Operate the flywheel framework from any role — human or agent. Use when you want to install
   flywheel into a repo, validate it is healthy, understand its state, or drive the loop
   (plan/brief/dispatch/review/correct-or-land) as an operator rather than as a worker. The CLI
-  currently implements only init and version; plan, run, retry, handoff, status, trace, and
-  artifacts are planned, not built. Until they land, drive the loop manually — write brief
-  files and run the raw worker commands shown here. There is no automatic handoff command yet;
-  handoff is done by writing state files and passing emitted session IDs by hand.
+  implements init, config, log, state, run, validate, inspect, verify, factory, and staff:
+  scaffold a repo, read and set the config, record events, derive state, dispatch workers, run
+  the gauges, and register roles on the floor. Plan, retry, handoff, status, trace, and
+  artifacts are planned, not built — until they land, drive those steps manually with brief
+  files and the raw worker commands shown here; handoff is done by writing state files and
+  passing emitted session IDs by hand.
 license: MIT
 metadata:
   version: 0.3.0
@@ -36,6 +38,7 @@ planned subcommands land — don't invoke commands that aren't built.
 | `flywheel validate <task> [--workdir]` | **implemented** | Run the brief header's `gate:` lines on the exact tree and check `owns`; exit 0, or 5 on a failing gate or a file outside owns. |
 | `flywheel inspect <task> --verdict pass\|rework\|scrap\|escalate --session <own session>` | **implemented** | Record an inspection; refused with exit 6 for a bad verdict, a worker's session, or no passing readings for the tree as it is now. |
 | `flywheel verify [<task>...\|--all] [--json]` | **implemented** | Check the event log against rules T1, T3, T4, T5, T8; exit 0 or 6. |
+| `flywheel staff --role lead --session <session> [--model M]` | **implemented** | Register a factory role on the floor; the lead line then reads `lead <session> (<model>)`. |
 | `flywheel factory [--once\|--json]` | **implemented** | Render the floor — workers, units with run states, andon, output; bare `flywheel` opens it, one shot when stdout is not a terminal. |
 | `flywheel plan`, `retry`, `handoff` | **planned** | Control plane: create tasks, resume, transfer between agents. |
 | `flywheel status`, `trace`, `artifacts` | **planned** | Data plane: in-flight work, task positions, worker outputs. |
@@ -79,12 +82,41 @@ the brief files, and pass the emitted session ID by hand to the next head.
 local cache. This framework repo ignores its own `.flywheel/` only because its dogfood state is
 scratch — consumer repos commit theirs.
 
+## Config
+
+`.flywheel/config.json` is the project configuration, created by `flywheel init`:
+
+| Field | Meaning |
+| --- | --- |
+| `version` | Config schema version (1). |
+| `workers[]` | One entry per worker: `name`, `adapter` (`opencode` or `sim`), `model`, `variant`, `max_parallel` (0 means 1), `fallbacks[{model, approved}]` (fallback models, each with a standing `approved` OK to switch without asking). |
+| `limits` | Shared caps: `per_host` (parallel workers per host) and `budget{wave_cost_usd}` (spending cap per wave). |
+| `feedback` | `upstream` (owner/repo) and `submit` (`ask` or `never`). |
+
+Read and set it with the CLI:
+
+```bash
+flywheel config get model                    # bare keys use the default worker
+flywheel config set variant low              # or model, adapter, max_parallel
+flywheel config set workers.<name>.<key> <v> # any worker by name
+flywheel config set feedback.upstream <owner/repo>
+flywheel config set feedback.submit ask|never
+flywheel config set limits.per_host <n>
+flywheel config show                        # effective config as JSON
+flywheel config validate                    # check the config, list every problem
+```
+
+Settable keys: `model`, `variant`, `adapter`, `max_parallel` (bare = the default worker, or
+`workers.<name>.<key>`), `feedback.upstream`, `feedback.submit`, `limits.per_host`.
+`fallbacks` is not settable — edit `.flywheel/config.json` for it. `flywheel init --model <m>
+--variant <v>` seeds a fresh config at setup.
+
 ## Operating the loop
 
-The CLI has no plan/run/retry/handoff commands yet, so each step is done with files and raw
+The CLI has no plan/retry/handoff commands yet, so those steps are done with files and raw
 commands. `flywheel init` only scaffolds; the loop below is the manual fallback and runs on the
-same state files the planned subcommands will automate. `$MODEL` is set once in
-`skills/flywheel/SKILL.md` → Invariants.
+same state files the planned subcommands will automate. `$MODEL` comes from
+`.flywheel/config.json` — `flywheel config get model` (see Config below).
 
 1. **Plan** — decompose into bounded single-purpose tasks; each gets a brief file:
    `cat > .flywheel/briefs/<id>.txt` with goal, exact change, don't-touch list, required gates,

@@ -91,6 +91,40 @@ func TestValidateRejectsUnknownKind(t *testing.T) {
 	}
 }
 
+func TestValidateStaffed(t *testing.T) {
+	if err := Validate(Event{Kind: "staffed", Session: "s1"}); err != nil {
+		t.Errorf("Validate() rejected staffed without task: %v", err)
+	}
+	if err := Validate(Event{Task: "T1", Kind: "staffed", Session: "s1"}); err != nil {
+		t.Errorf("Validate() rejected staffed with task: %v", err)
+	}
+	if err := Validate(Event{Kind: "staffed"}); err == nil {
+		t.Error("Validate() accepted staffed without session")
+	} else if !strings.Contains(err.Error(), "session") {
+		t.Errorf("Validate() error = %v, want session message", err)
+	}
+}
+
+func TestStaffedDefaultsPersonaToLead(t *testing.T) {
+	dir := t.TempDir()
+	if err := AppendEvent(dir, Event{TS: "2026-09-13T00:00:00Z", Kind: "staffed", Session: "s1"}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	if len(evs) != 1 {
+		t.Fatalf("ReadEvents() = %d events, want 1", len(evs))
+	}
+	if evs[0].Persona != "lead" {
+		t.Errorf("staffed persona = %q, want lead (default when empty)", evs[0].Persona)
+	}
+	if evs[0].Session != "s1" {
+		t.Errorf("staffed session = %q, want s1", evs[0].Session)
+	}
+}
+
 func TestValidateRejectsBadAttempt(t *testing.T) {
 	if err := Validate(Event{Task: "T1", Kind: "dispatched", Attempt: "x1"}); err == nil {
 		t.Error("Validate() accepted attempt x1")

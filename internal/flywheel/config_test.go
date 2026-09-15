@@ -206,3 +206,115 @@ func TestConfigWorkerLookup(t *testing.T) {
 		t.Errorf("DefaultWorker() = %+v, want the first worker", got)
 	}
 }
+
+func TestConfigSetWritesAndReadsBack(t *testing.T) {
+	dir := t.TempDir()
+	cfg, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if err := cfg.Set("variant", "low"); err != nil {
+		t.Fatalf("Set(variant, low) error = %v", err)
+	}
+	if err := cfg.Set("workers.default.max_parallel", "2"); err != nil {
+		t.Fatalf("Set(workers.default.max_parallel, 2) error = %v", err)
+	}
+	if err := WriteConfig(dir, cfg); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".flywheel", "config.json")); err != nil {
+		t.Fatalf("config.json not created: %v", err)
+	}
+	got, exists, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig() after write error = %v", err)
+	}
+	if !exists {
+		t.Fatal("LoadConfig() exists = false, want true after set + write")
+	}
+	for key, want := range map[string]string{
+		"variant":                      "low",
+		"workers.default.max_parallel": "2",
+	} {
+		if v, err := got.Get(key); err != nil || v != want {
+			t.Errorf("Get(%q) = %q, %v; want %q", key, v, err, want)
+		}
+	}
+}
+
+func TestConfigSetIntegerParseError(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := cfg.Set("max_parallel", "abc"); err == nil {
+		t.Fatal("Set(max_parallel, abc) = nil error, want a parse error")
+	} else if !strings.Contains(err.Error(), "integer") {
+		t.Errorf("Set(max_parallel, abc) error = %q, want mention of integer", err)
+	}
+	if got := cfg.DefaultWorker().MaxParallel; got != 4 {
+		t.Errorf("MaxParallel = %d, want unchanged 4 after failed Set", got)
+	}
+}
+
+func TestConfigSetInvalidValueLeavesFileUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteConfig(dir, DefaultConfig()); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	path := filepath.Join(dir, ".flywheel", "config.json")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config.json: %v", err)
+	}
+	cfg, _, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if err := cfg.Set("max_parallel", "-1"); err != nil {
+		t.Fatalf("Set(max_parallel, -1) error = %v (parse succeeds; validation is WriteConfig's job)", err)
+	}
+	if err := WriteConfig(dir, cfg); err == nil {
+		t.Fatal("WriteConfig() = nil error, want validation rejection of max_parallel -1")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config.json after failed write: %v", err)
+	}
+	if !reflect.DeepEqual(after, before) {
+		t.Error("config.json changed despite a failed write")
+	}
+}
+
+func TestConfigSetUnknownKeyListsSettableKeys(t *testing.T) {
+	cfg := DefaultConfig()
+	err := cfg.Set("bogus", "x")
+	if err == nil {
+		t.Fatal("Set(bogus) = nil error, want error listing settable keys")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "bogus") {
+		t.Errorf("Set(bogus) error = %q, want mention of the unknown key", msg)
+	}
+	for _, k := range []string{
+		"model", "variant", "adapter", "max_parallel",
+		"workers.default.model", "feedback.upstream", "feedback.submit", "limits.per_host",
+	} {
+		if !strings.Contains(msg, k) {
+			t.Errorf("Set(bogus) error missing settable key %q; got:\n%s", k, msg)
+		}
+	}
+	if strings.Contains(msg, "fallbacks") {
+		t.Error("Set(bogus) error lists fallbacks, which is not settable")
+	}
+}
+
+func TestConfigSetFallbacksUnsupported(t *testing.T) {
+	cfg := DefaultConfig()
+	for _, key := range []string{"fallbacks", "fallbacks.all"} {
+		err := cfg.Set(key, "m")
+		if err == nil {
+			t.Fatalf("Set(%q) = nil error, want rejection", key)
+		}
+		if !strings.Contains(err.Error(), "config.json") {
+			t.Errorf("Set(%q) error = %q, want mention of .flywheel/config.json", key, err)
+		}
+	}
+}

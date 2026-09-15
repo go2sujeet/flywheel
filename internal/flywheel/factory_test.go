@@ -388,3 +388,60 @@ func appendLine(path, line string, t *testing.T) {
 		t.Fatalf("close %s: %v", path, err)
 	}
 }
+
+func TestBuildStaffingLatestPerRole(t *testing.T) {
+	events := []Event{
+		{TS: "2026-09-13T00:00:00Z", Kind: "staffed", Session: "s1", Persona: "lead", Model: "m1"},
+		{TS: "2026-09-13T00:00:01Z", Kind: "staffed", Session: "sf1", Persona: "foreman", Model: "m2"},
+		{TS: "2026-09-13T00:00:02Z", Kind: "staffed", Session: "s3", Persona: "lead"},
+	}
+	st := buildStaffing(events)
+	if st.Lead != "s3" {
+		t.Errorf("lead = %q, want s3 (latest lead staffed event, parentheses dropped without a model)", st.Lead)
+	}
+}
+
+func TestBuildStaffingModelShownInParentheses(t *testing.T) {
+	events := []Event{
+		{TS: "2026-09-13T00:00:00Z", Kind: "staffed", Session: "s1", Persona: "lead", Model: "m1"},
+	}
+	st := buildStaffing(events)
+	if st.Lead != "s1 (m1)" {
+		t.Errorf("lead = %q, want s1 (m1)", st.Lead)
+	}
+}
+
+func TestBuildStaffingNotRegisteredWithoutStaffedEvent(t *testing.T) {
+	st := buildStaffing([]Event{})
+	if st.Lead != "not registered" {
+		t.Errorf("lead = %q, want not registered", st.Lead)
+	}
+}
+
+func TestBuildOutputFirstPassFromInspectedAndReviewed(t *testing.T) {
+	// The first verdict per task wins, whether it comes from inspected or
+	// reviewed; a later pass on a task whose first verdict was rework must not
+	// count.
+	events := []Event{
+		{TS: "2026-09-13T00:00:00Z", Task: "T1", Kind: "reviewed", Verdict: "pass"},
+		{TS: "2026-09-13T00:00:00Z", Task: "T2", Kind: "inspected", Verdict: "pass"},
+		{TS: "2026-09-13T00:00:01Z", Task: "T3", Kind: "inspected", Verdict: "rework"},
+		{TS: "2026-09-13T00:00:02Z", Task: "T3", Kind: "reviewed", Verdict: "pass"},
+		{TS: "2026-09-13T00:00:00Z", Task: "T4", Kind: "reviewed", Verdict: "correct"},
+		{TS: "2026-09-13T00:00:00Z", Task: "T5", Kind: "inspected", Verdict: "escalate"},
+	}
+	now, err := time.Parse(time.RFC3339Nano, "2026-09-13T01:00:00Z")
+	if err != nil {
+		t.Fatalf("parse now: %v", err)
+	}
+	o := buildOutput(events, now)
+	if !o.HasReviews {
+		t.Error("has reviews = false, want true (inspected verdicts count)")
+	}
+	if o.FirstPassRate != 0.4 {
+		t.Errorf("first-pass rate = %g, want 0.4 (T1 and T2 only)", o.FirstPassRate)
+	}
+	if o.Finished != 0 {
+		t.Errorf("finished = %d, want 0 (no finished events)", o.Finished)
+	}
+}

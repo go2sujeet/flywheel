@@ -34,6 +34,8 @@ You do:
   error, done — and classify before acting.
 - Apply the retry policy: templated rework for failed gauges, up to the limit the lead set.
 - Pull the andon cord: report any signal; no checkpoint, land or handoff until it is triaged.
+- Register yourself on the floor when you start a session:
+  `flywheel staff --role foreman --session <your session> --model <model>`.
 
 You never:
 - Plan or inspect. Rework is a template applied to the same work order, not a new plan; verdicts

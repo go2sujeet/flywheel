@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -158,5 +159,178 @@ func TestVerifyT3FirstPassSurvivesLaterAttempt(t *testing.T) {
 	fails := verifyAll(t, dir, "T1")
 	if fails["T3"] {
 		t.Error("T3 flagged the first inspected pass even though a later finished event exists")
+	}
+}
+
+func TestVerifyAllEmptyLogPasses(t *testing.T) {
+	dir := t.TempDir()
+	res, err := VerifyTasks(dir, VerifyOptions{Dir: dir, All: true})
+	if err != nil {
+		t.Fatalf("VerifyTasks() error = %v", err)
+	}
+	if !res.Passed {
+		t.Error("VerifyTasks(--all) on an empty log did not pass")
+	}
+	if len(res.Items) != 0 {
+		t.Errorf("VerifyTasks(--all) on an empty log = %d items, want 0", len(res.Items))
+	}
+}
+
+func TestVerifyNamedMissingTaskStillRunsRules(t *testing.T) {
+	// An explicitly named task that does not exist must not get the passing
+	// --all empty result: the rules still run, and a task with no planned
+	// brief fails T3 as it did before.
+	dir := t.TempDir()
+	res, err := VerifyTasks(dir, VerifyOptions{Dir: dir, Tasks: []string{"NOPE"}})
+	if err != nil {
+		t.Fatalf("VerifyTasks() error = %v", err)
+	}
+	if res.Passed {
+		t.Error("VerifyTasks() passed a named task absent from the log")
+	}
+	found := false
+	for _, item := range res.Items {
+		if item.Rule == "T3" && !item.Pass {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("VerifyTasks() items = %v, want a failing T3 for the missing task", res.Items)
+	}
+}
+
+// deltaPath writes a delta file next to the task and returns its path.
+func deltaPath(t *testing.T, dir, text string) string {
+	t.Helper()
+	path := filepath.Join(dir, "delta.txt")
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatalf("write delta: %v", err)
+	}
+	return path
+}
+
+// TestVerifyT1FreshAndCorrectionPass checks ruleT1 accepts a fresh attempt
+// matching the planned brief and a correction matching its recorded delta.
+func TestVerifyT1FreshAndCorrectionPass(t *testing.T) {
+	dir, err := initTask(t, []string{"exit 0"})
+	if err != nil {
+		t.Fatalf("initTask() error = %v", err)
+	}
+	delta := deltaPath(t, dir, "fix it\n")
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T02:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1", Session: "w1", SHA256: briefSHA(t, filepath.Join(dir, "brief.txt"))}); err != nil {
+		t.Fatalf("append dispatched r1: %v", err)
+	}
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T02:10:00Z", Task: "T1", Kind: "dispatched", Attempt: "c1", Session: "w1", Brief: "delta.txt", SHA256: briefSHA(t, delta)}); err != nil {
+		t.Fatalf("append dispatched c1: %v", err)
+	}
+	fails := verifyAll(t, dir, "T1")
+	if fails["T1"] {
+		t.Error("verify flagged a fresh attempt and a matching correction (T1)")
+	}
+}
+
+// TestVerifyT1CorrectionTamperedDelta checks a correction whose delta file
+// changed after dispatch fails T1 naming the delta.
+func TestVerifyT1CorrectionTamperedDelta(t *testing.T) {
+	dir, err := initTask(t, []string{"exit 0"})
+	if err != nil {
+		t.Fatalf("initTask() error = %v", err)
+	}
+	_ = deltaPath(t, dir, "fix it\n")
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T02:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "c1", Brief: "delta.txt", SHA256: "deadbeef"}); err != nil {
+		t.Fatalf("append dispatched c1: %v", err)
+	}
+	fails := verifyAll(t, dir, "T1")
+	if !fails["T1"] {
+		t.Error("verify did not flag a tampered correction delta (T1)")
+	}
+}
+
+// TestVerifyT1CorrectionMissingDeltaPath checks a correction dispatched
+// without a recorded delta path fails T1.
+func TestVerifyT1CorrectionMissingDeltaPath(t *testing.T) {
+	dir, err := initTask(t, []string{"exit 0"})
+	if err != nil {
+		t.Fatalf("initTask() error = %v", err)
+	}
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T02:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "c1", SHA256: "deadbeef"}); err != nil {
+		t.Fatalf("append dispatched c1: %v", err)
+	}
+	res, err := VerifyTasks(dir, VerifyOptions{Dir: dir, Tasks: []string{"T1"}})
+	if err != nil {
+		t.Fatalf("VerifyTasks() error = %v", err)
+	}
+	got := false
+	for _, item := range res.Items {
+		if item.Rule == "T1" && !item.Pass && strings.Contains(item.Reason, "delta") {
+			got = true
+		}
+	}
+	if !got {
+		t.Errorf("verify did not fail c1 for a missing delta path naming the delta (T1): %v", res.Items)
+	}
+}
+
+// TestVerifyT1CorrectionMissingDeltaFile checks a correction whose delta path
+// names a file that does not exist fails T1 naming the delta.
+func TestVerifyT1CorrectionMissingDeltaFile(t *testing.T) {
+	dir, err := initTask(t, []string{"exit 0"})
+	if err != nil {
+		t.Fatalf("initTask() error = %v", err)
+	}
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T02:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "c1", Brief: "gone.txt", SHA256: "deadbeef"}); err != nil {
+		t.Fatalf("append dispatched c1: %v", err)
+	}
+	res, err := VerifyTasks(dir, VerifyOptions{Dir: dir, Tasks: []string{"T1"}})
+	if err != nil {
+		t.Fatalf("VerifyTasks() error = %v", err)
+	}
+	got := false
+	for _, item := range res.Items {
+		if item.Rule == "T1" && !item.Pass && strings.Contains(item.Reason, "gone.txt") {
+			got = true
+		}
+	}
+	if !got {
+		t.Errorf("verify did not fail c1 for a missing delta file naming the delta (T1): %v", res.Items)
+	}
+}
+
+// TestVerifyT1AmendmentWaivesFreshTamper locks in today's amendment semantics:
+// an amended event after a fresh dispatch explains a brief change.
+func TestVerifyT1AmendmentWaivesFreshTamper(t *testing.T) {
+	dir, err := initTask(t, []string{"exit 0"})
+	if err != nil {
+		t.Fatalf("initTask() error = %v", err)
+	}
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T02:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1", SHA256: "deadbeef"}); err != nil {
+		t.Fatalf("append dispatched r1: %v", err)
+	}
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T03:00:00Z", Task: "T1", Kind: "amended", Brief: "brief.txt"}); err != nil {
+		t.Fatalf("append amended: %v", err)
+	}
+	fails := verifyAll(t, dir, "T1")
+	if fails["T1"] {
+		t.Error("verify flagged a fresh dispatch an amendment already explains (T1)")
+	}
+}
+
+// TestVerifyT1AmendmentDoesNotWaiveCorrectionTamper checks an amendment never
+// hides a tampered correction delta.
+func TestVerifyT1AmendmentDoesNotWaiveCorrectionTamper(t *testing.T) {
+	dir, err := initTask(t, []string{"exit 0"})
+	if err != nil {
+		t.Fatalf("initTask() error = %v", err)
+	}
+	_ = deltaPath(t, dir, "fix it\n")
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T02:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "c1", Brief: "delta.txt", SHA256: "deadbeef"}); err != nil {
+		t.Fatalf("append dispatched c1: %v", err)
+	}
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T03:00:00Z", Task: "T1", Kind: "amended", Brief: "brief.txt"}); err != nil {
+		t.Fatalf("append amended: %v", err)
+	}
+	fails := verifyAll(t, dir, "T1")
+	if !fails["T1"] {
+		t.Error("verify let an amendment waive a tampered correction delta (T1)")
 	}
 }

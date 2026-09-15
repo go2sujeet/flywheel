@@ -31,9 +31,11 @@ control plane (plan, run, retry, handoff) and data plane (status, trace, artifac
 identically whether you are Claude Code, Codex, OpenCode, or a human. Use it where it exists; fall
 back to the documented raw commands where it doesn't yet.
 
-- `flywheel init --dir <target>` — scaffold `flywheel.md` + `.flywheel/state.json` + `.flywheel/briefs/`
-- `flywheel version` — print version
-- (more subcommands being built by the loop itself)
+- `flywheel init --dir <target>` — scaffold `flywheel.md`, `.flywheel/state.json`,
+  `.flywheel/events.jsonl`, `.flywheel/config.json`, `.flywheel/.gitignore` and
+  `.flywheel/briefs/`; warns when the repo's `.gitignore` hides the state files.
+- Everything else is in the CLI: `flywheel help` lists every command, and `flywheel help
+  <command>` (or `<command> -h`) prints a command's flags.
 
 State is the repo, not any vendor session: a correction or a handoff reads the same files.
 
@@ -61,14 +63,17 @@ session. A worker never records gauge readings, inspections or audits.
 
 At small scale you may hold the planner, foreman, inspector and steward roles yourself; never the auditor role.
 
+When you start a session, register yourself on the floor:
+`flywheel staff --role lead --session <your session> --model <model>`.
+
 ## Invariants (hold these or don't run)
 
-- **Approved worker only.** The model is set once, here:
-  ```bash
-  MODEL=openrouter/deepseek/deepseek-v4-flash-0731   # approved default
-  ```
-  The user may choose another model: change this line, not the commands. Never switch silently;
-  resuming on a different model needs the user's OK
+- **Approved worker only.** The model, reasoning variant and approved fallbacks live in
+  `.flywheel/config.json`: read them with `flywheel config get model` and `flywheel config get
+  variant`, set them with `flywheel config set model <m>` or `flywheel config set variant <v>`,
+  or seed them at setup with `flywheel init --model <m> --variant <v>`. The user may choose
+  another model: change the config, not the commands. Never switch silently; resuming on a
+  different model needs the user's OK
   ([references/worker-brief.md#8-blocker-protocol-do-not-take-over](references/worker-brief.md#8-blocker-protocol-do-not-take-over)).
   Never assert a metered model is free; providers cache most of each dispatch's ~46k-token harness
   context (a 2026-09-12 probe read 46,310 of 46,324 tokens from cache and cost $0.0004; the field
@@ -122,7 +127,7 @@ shared tree (ordering and `--auto` behaviour:
 ```bash
 mkdir -p .flywheel/runs
 OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-r1" --variant low \
+  opencode run --pure -m "$(flywheel config get model)" --auto --format json --title "<id>-r1" --variant low \
   "Follow the attached brief exactly." --file .flywheel/briefs/<id>.txt < /dev/null > .flywheel/runs/<id>.r1.jsonl; rc=$?
 ```
 
@@ -185,7 +190,7 @@ that need you (silent, stalled, capped, provider-error).
 
 ```bash
 OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
-  opencode run --pure -m "$MODEL" --auto --format json --title "<id>-c<n>" --variant low --session "<emitted-sessionID>" \
+  opencode run --pure -m "$(flywheel config get model)" --auto --format json --title "<id>-c<n>" --variant low --session "<emitted-sessionID>" \
   "Apply the attached correction to the same task." --file .flywheel/briefs/<id>.delta.txt < /dev/null > .flywheel/runs/<id>.c<n>.jsonl; rc=$?
 ```
 

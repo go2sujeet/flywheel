@@ -180,11 +180,17 @@ func hasCleanOwnsChecked(events []Event, task, tree string, after time.Time) boo
 }
 
 // sessionClash reports which worker session collides with sess, or "" when
-// sess is not a worker session of the task.
+// sess is not a worker session of the task. The worker-event set matches
+// verify.go's ruleT4, so an inspector's own inspected events never count:
+// only started, finished, dispatched, report and worker_plan events carry
+// worker sessions.
 func sessionClash(task string, events []Event, sess string) string {
 	for _, e := range events {
 		if e.Task == task && e.Session == sess {
-			return fmt.Sprintf("session %q is a worker session of task %q; use a distinct inspector --session", sess, task)
+			switch e.Kind {
+			case "started", "finished", "dispatched", "report", "worker_plan":
+				return fmt.Sprintf("session %q is a worker session of task %q; use a distinct inspector --session", sess, task)
+			}
 		}
 	}
 	return ""

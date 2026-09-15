@@ -126,6 +126,9 @@ func Derive(events []Event) State {
 	var tasks map[string]TaskState = map[string]TaskState{}
 	updated := ""
 	for _, e := range evs {
+		if e.Task == "" {
+			continue // floor-level events (staffed) carry no task and no state
+		}
 		ts, ok := tasks[e.Task]
 		if !ok {
 			ts = TaskState{ID: e.Task}
@@ -172,7 +175,7 @@ func Derive(events []Event) State {
 			ts.Needs = e.Needs
 			ts.Owns = e.Owns
 		}
-		if e.Session != "" {
+		if e.Session != "" && (e.Kind == "started" || e.Kind == "finished") {
 			ts.Session = e.Session
 		}
 		if e.Model != "" {

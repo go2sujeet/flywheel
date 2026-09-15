@@ -12,18 +12,21 @@ import (
 )
 
 func init() {
-	register("config", "read and validate the flywheel config", runConfig)
+	register("config", "read and validate the flywheel config\n    get <key>          print a config value (bare keys use the default worker)\n    set <key> <value>  set a config value (model, variant, adapter, max_parallel,\n                       feedback.upstream, feedback.submit, limits.per_host)\n    show               print the effective config as JSON\n    validate           check the config and list every problem", runConfig)
+	registerHelp("config", "flywheel config <get|set|show|validate> [--dir DIR]", nil)
 }
 
 func runConfig(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "flywheel config: missing subcommand (get, show, validate)")
+		fmt.Fprintln(os.Stderr, "flywheel config: missing subcommand (get, set, show, validate)")
 		configUsage(os.Stderr)
 		os.Exit(2)
 	}
 	switch args[0] {
 	case "get":
 		runConfigGet(args[1:])
+	case "set":
+		runConfigSet(args[1:])
 	case "show":
 		runConfigShow(args[1:])
 	case "validate":
@@ -67,14 +70,42 @@ func parseConfigArgs(args []string) (dir string, positional []string, err error)
 }
 
 func configUsage(w io.Writer) {
-	fmt.Fprintln(w, "usage: flywheel config <get|show|validate>")
+	fmt.Fprintln(w, "usage: flywheel config <get|set|show|validate>")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "  get <key>      print a config value (bare keys use the default worker)")
+	fmt.Fprintln(w, "  set <key> <value>  set a config value (model, variant, adapter, max_parallel,")
+	fmt.Fprintln(w, "                 feedback.upstream, feedback.submit, limits.per_host)")
 	fmt.Fprintln(w, "  show           print the effective config as JSON")
 	fmt.Fprintln(w, "  validate       check the config and list every problem")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "flags:")
-	fmt.Fprintln(w, "  --dir DIR      project directory (default: current working directory)")
+	fmt.Fprintln(w, "  --dir DIR      project directory")
+}
+
+func runConfigSet(args []string) {
+	dir, positional, err := parseConfigArgs(args)
+	if err != nil {
+		configError("set", err)
+	}
+	if len(positional) != 2 {
+		fmt.Fprintln(os.Stderr, "flywheel config set: key and value are required")
+		configUsage(os.Stderr)
+		os.Exit(2)
+	}
+	cfg, _, err := flywheel.LoadConfig(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "flywheel config set: %v\n", err)
+		os.Exit(1)
+	}
+	if err := cfg.Set(positional[0], positional[1]); err != nil {
+		fmt.Fprintf(os.Stderr, "flywheel config set: %v\n", err)
+		os.Exit(1)
+	}
+	if err := flywheel.WriteConfig(dir, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "flywheel config set: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("%s = %s\n", positional[0], positional[1])
 }
 
 func runConfigGet(args []string) {

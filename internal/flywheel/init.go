@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
@@ -48,6 +49,16 @@ Placeholder: completed tasks are logged here.
 // empty). Unrelated files are never touched. A crash mid-write can still
 // leave partial state; retries may need --force.
 func Init(dir string, force bool) (string, error) {
+	return InitSeeded(dir, force, "", "")
+}
+
+// InitSeeded is Init with optional model and variant seeding: when either
+// value is non-empty and .flywheel/config.json does not exist, the new
+// config is written from DefaultConfig with the default worker's model
+// and/or variant replaced by the given values (validated through
+// WriteConfig). An existing config.json is never touched, even with --force;
+// the caller says how to edit it.
+func InitSeeded(dir string, force bool, model, variant string) (string, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return "", fmt.Errorf("resolve %q: %w", dir, err)
@@ -76,7 +87,14 @@ func Init(dir string, force bool) (string, error) {
 		return "", fmt.Errorf("encode state: %w", err)
 	}
 	stateBytes := append(stateJSON, '\n')
-	configJSON, err := json.MarshalIndent(DefaultConfig(), "", "  ")
+	cfg := DefaultConfig()
+	if model != "" {
+		cfg.Workers[0].Model = model
+	}
+	if variant != "" {
+		cfg.Workers[0].Variant = variant
+	}
+	configJSON, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("encode config: %w", err)
 	}
@@ -86,6 +104,10 @@ func Init(dir string, force bool) (string, error) {
 	// preexisting bytes and remove only what this call created.
 	mdExisted, mdPrev := snapshotFile(mdPath)
 	stateExisted, statePrev := snapshotFile(statePath)
+	configExisted := false
+	if _, err := os.Lstat(configPath); err == nil {
+		configExisted = true
+	}
 	briefsExisted := dirExisted(briefsDir)
 	dotFlywheelExisted := dirExisted(dotFlywheel)
 	createdMD := false
@@ -151,10 +173,22 @@ func Init(dir string, force bool) (string, error) {
 	}
 	// The config is the project configuration: create it from the built-in
 	// default only if missing. It is never overwritten, even with --force.
-	createdConfig, err = createIfMissing(configPath, configBytes)
-	if err != nil {
-		rollback()
-		return "", fmt.Errorf("write %s: %w", configPath, err)
+	// --model and --variant seed a fresh config through WriteConfig; an
+	// existing one is left untouched for the caller to edit.
+	if model != "" || variant != "" {
+		if !configExisted {
+			if err := WriteConfig(dir, cfg); err != nil {
+				rollback()
+				return "", fmt.Errorf("write %s: %w", configPath, err)
+			}
+			createdConfig = true
+		}
+	} else {
+		createdConfig, err = createIfMissing(configPath, configBytes)
+		if err != nil {
+			rollback()
+			return "", fmt.Errorf("write %s: %w", configPath, err)
+		}
 	}
 	createdGitignore, err = createIfMissing(gitignorePath, []byte("runs/\n"))
 	if err != nil {
@@ -259,4 +293,32 @@ func snapshotFile(p string) (existed bool, prev []byte) {
 func dirExisted(p string) bool {
 	_, err := os.Lstat(p)
 	return err == nil
+}
+
+// IgnoredStateFiles lists which of the state files init creates git would
+// ignore, so callers can warn that they would never be committed. Each
+// returned path is relative to dir (for example ".flywheel/events.jsonl").
+// Not a git work tree, or git missing, reports nothing: those are
+// non-issues, not errors.
+func IgnoredStateFiles(dir string) []string {
+	var ignored []string
+	for _, name := range []string{"events.jsonl", "state.json", configFileName} {
+		p := filepath.ToSlash(filepath.Join(".flywheel", name))
+		if gitIgnores(dir, p) {
+			ignored = append(ignored, p)
+		}
+	}
+	return ignored
+}
+
+// gitIgnores runs the read-only `git check-ignore -q <path>` in dir and
+// reports whether git would ignore path. Any failure — not a git work tree,
+// git missing, or the path simply not ignored — reports false.
+func gitIgnores(dir, path string) bool {
+	cmd := exec.Command("git", "check-ignore", "-q", path)
+	cmd.Dir = dir
+	if _, err := cmd.Output(); err != nil {
+		return false
+	}
+	return true
 }
