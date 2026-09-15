@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const configFileName = "config.json"
@@ -19,10 +20,11 @@ var workerNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 // Config is the project configuration stored in .flywheel/config.json.
 type Config struct {
-	Version  int      `json:"version"`
-	Workers  []Worker `json:"workers"`
-	Limits   Limits   `json:"limits,omitempty"`
-	Feedback Feedback `json:"feedback,omitempty"`
+	Version  int          `json:"version"`
+	Workers  []Worker     `json:"workers"`
+	Limits   Limits       `json:"limits,omitempty"`
+	Feedback Feedback     `json:"feedback,omitempty"`
+	Lease    *LeaseConfig `json:"lease,omitempty"`
 }
 
 // Worker configures a single CLI worker.
@@ -56,6 +58,35 @@ type Budget struct {
 type Feedback struct {
 	Upstream string `json:"upstream,omitempty"` // owner/repo
 	Submit   string `json:"submit,omitempty"`   // "ask" (default) or "never"
+}
+
+// LeaseConfig tunes the worker lease that flywheel run writes while a worker
+// runs. Both values are Go duration strings; when the block is absent the
+// defaults apply: renew_interval 15s, ttl 45s.
+type LeaseConfig struct {
+	RenewInterval string `json:"renew_interval,omitempty"`
+	TTL           string `json:"ttl,omitempty"`
+}
+
+const (
+	defaultLeaseRenewInterval = 15 * time.Second
+	defaultLeaseTTL           = 45 * time.Second
+)
+
+// leaseTimings returns the lease renew interval and ttl; an absent lease
+// block (or unparseable values, which Validate rejects) means the defaults.
+func (c Config) leaseTimings() (renew, ttl time.Duration) {
+	renew, ttl = defaultLeaseRenewInterval, defaultLeaseTTL
+	if c.Lease == nil {
+		return renew, ttl
+	}
+	if r, err := time.ParseDuration(c.Lease.RenewInterval); err == nil {
+		renew = r
+	}
+	if t, err := time.ParseDuration(c.Lease.TTL); err == nil {
+		ttl = t
+	}
+	return renew, ttl
 }
 
 // DefaultConfig returns the built-in configuration used when no
@@ -150,6 +181,23 @@ func (c Config) Validate() error {
 	case "", "ask", "never":
 	default:
 		problems = append(problems, fmt.Sprintf("feedback.submit %q must be empty, \"ask\", or \"never\"", c.Feedback.Submit))
+	}
+	if c.Lease != nil {
+		renew, rerr := time.ParseDuration(c.Lease.RenewInterval)
+		if rerr != nil {
+			problems = append(problems, fmt.Sprintf("lease.renew_interval %q is not a valid duration", c.Lease.RenewInterval))
+		} else if renew <= 0 {
+			problems = append(problems, fmt.Sprintf("lease.renew_interval %s must be positive", c.Lease.RenewInterval))
+		}
+		ttl, terr := time.ParseDuration(c.Lease.TTL)
+		if terr != nil {
+			problems = append(problems, fmt.Sprintf("lease.ttl %q is not a valid duration", c.Lease.TTL))
+		} else if ttl <= 0 {
+			problems = append(problems, fmt.Sprintf("lease.ttl %s must be positive", c.Lease.TTL))
+		}
+		if rerr == nil && terr == nil && ttl <= renew {
+			problems = append(problems, fmt.Sprintf("lease.ttl %s must be greater than renew_interval %s", c.Lease.TTL, c.Lease.RenewInterval))
+		}
 	}
 	if len(problems) == 0 {
 		return nil
