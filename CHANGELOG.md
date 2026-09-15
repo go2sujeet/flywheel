@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.4.0](https://github.com/suzworx/flywheel/compare/v0.3.0...v0.4.0) (2026-09-15)
+
+
+### Features
+
+* flywheel help, config set, staff, and stricter gauges ([#107](https://github.com/suzworx/flywheel/issues/107)) ([fbd8d67](https://github.com/suzworx/flywheel/commit/fbd8d67ea3090b5831522559a910b074c097cb04))
+
+
+### Bug Fixes
+
+* run --delta without --resume sends the delta ([#108](https://github.com/suzworx/flywheel/issues/108)) ([f51cd99](https://github.com/suzworx/flywheel/commit/f51cd996dde4172fff17b965d7635eb59f2d055c)), closes [#106](https://github.com/suzworx/flywheel/issues/106)
+
+
+### Documentation
+
+* add AGENTS.md, the build manual for agents working on flywheel ([#99](https://github.com/suzworx/flywheel/issues/99)) ([23d712c](https://github.com/suzworx/flywheel/commit/23d712cac0d2bbddde5b269519dc0054787593ae))
+* deterministic factory runtime, Phase 0 (report, gaps, design, plan) ([#109](https://github.com/suzworx/flywheel/issues/109)) ([fa2ba45](https://github.com/suzworx/flywheel/commit/fa2ba45600f4ecb1956e742245829e7db3add909))
+* flywheel is built by flywheel; the repo moves to suzworx ([#104](https://github.com/suzworx/flywheel/issues/104)) ([6b5df3d](https://github.com/suzworx/flywheel/commit/6b5df3d048748bb63d569ca3fa9778e6641ed45c))
+* the factory is files — owned setup, run intelligence ([#103](https://github.com/suzworx/flywheel/issues/103)) ([57c7f3a](https://github.com/suzworx/flywheel/commit/57c7f3abe755c3b33a2ead039cb308b4e0dd9ada))
+
 ## [0.3.0](https://github.com/go2sujeet/flywheel/compare/v0.2.0...v0.3.0) (2026-09-13)
 
 
