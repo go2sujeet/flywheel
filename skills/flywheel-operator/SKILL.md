@@ -68,6 +68,12 @@ Requires: Go toolchain (to build), the `opencode` CLI (to dispatch workers), git
 `* text eol=lf`) should add that line and re-checkout the briefs, so dispatch hashes and brief
 hashes agree despite CRLF.
 
+**Upgrading.** Swap the binary — renaming the old executable is safe while a unit runs. Keep
+symlinked skill installs rather than copies (the skills installer can replace symlinks). Commit
+`skills-lock.json`, or any tracked file the skills installer touched, before the next
+`flywheel validate`, because files the lead changes after a unit's dispatch count against that
+unit's owns check. Run `flywheel status` afterwards.
+
 ## State model
 
 Everything is files — no database.
