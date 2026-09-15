@@ -114,6 +114,7 @@ func ruleT1(dir, task string, events []Event) []VerifyItem {
 		} else {
 			cur := sha256.Sum256(b)
 			curHex := hex.EncodeToString(cur[:])
+			normHex := contentSHA(b)
 			for _, e := range events {
 				if e.Task != task || e.Kind != "dispatched" || e.SHA256 == "" || isCorrection(e.Attempt) {
 					continue
@@ -121,7 +122,7 @@ func ruleT1(dir, task string, events []Event) []VerifyItem {
 				if amendedBetween(events, task, e.TS) {
 					continue // an amendment explains the change; compare when it is the last change
 				}
-				if e.SHA256 != curHex {
+				if e.SHA256 != curHex && e.SHA256 != normHex {
 					items = append(items, VerifyItem{Task: task, Rule: "T1", Pass: false,
 						Reason: fmt.Sprintf("dispatched sha256 %s does not match current brief %s", short(e.SHA256), short(curHex))})
 				}
@@ -152,7 +153,8 @@ func ruleT1(dir, task string, events []Event) []VerifyItem {
 		}
 		cur := sha256.Sum256(b)
 		curHex := hex.EncodeToString(cur[:])
-		if e.SHA256 != curHex {
+		normHex := contentSHA(b)
+		if e.SHA256 != curHex && e.SHA256 != normHex {
 			items = append(items, VerifyItem{Task: task, Rule: "T1", Pass: false,
 				Reason: fmt.Sprintf("dispatched %s sha256 %s does not match delta %s", e.Attempt, short(e.SHA256), short(curHex))})
 		}

@@ -315,6 +315,83 @@ func TestVerifyT1AmendmentWaivesFreshTamper(t *testing.T) {
 	}
 }
 
+// TestVerifyT1CRLFBriefPasses checks the field fix: a brief dispatched as LF
+// that a CRLF re-checkout rewrote still passes T1, because the recorded hash
+// is contentSHA and verify compares through contentSHA.
+func TestVerifyT1CRLFBriefPasses(t *testing.T) {
+	dir, err := initTask(t, []string{"exit 0"})
+	if err != nil {
+		t.Fatalf("initTask() error = %v", err)
+	}
+	briefPath := filepath.Join(dir, "brief.txt")
+	lfB, err := os.ReadFile(briefPath)
+	if err != nil {
+		t.Fatalf("read brief: %v", err)
+	}
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T02:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1", Session: "w1", SHA256: contentSHA(lfB)}); err != nil {
+		t.Fatalf("append dispatched r1: %v", err)
+	}
+	crlf := strings.ReplaceAll(string(lfB), "\n", "\r\n")
+	if err := os.WriteFile(briefPath, []byte(crlf), 0o644); err != nil {
+		t.Fatalf("rewrite brief CRLF: %v", err)
+	}
+	fails := verifyAll(t, dir, "T1")
+	if fails["T1"] {
+		t.Error("verify flagged an unchanged brief whose checkout turned CRLF (T1)")
+	}
+}
+
+// TestVerifyT1LegacyRawCRLFHashPasses checks older logs, which recorded the
+// raw sha256 of CRLF-checked-out content, still verify against the same
+// working copy.
+func TestVerifyT1LegacyRawCRLFHashPasses(t *testing.T) {
+	dir, err := initTask(t, []string{"exit 0"})
+	if err != nil {
+		t.Fatalf("initTask() error = %v", err)
+	}
+	briefPath := filepath.Join(dir, "brief.txt")
+	b, err := os.ReadFile(briefPath)
+	if err != nil {
+		t.Fatalf("read brief: %v", err)
+	}
+	crlf := []byte(strings.ReplaceAll(string(b), "\n", "\r\n"))
+	if err := os.WriteFile(briefPath, crlf, 0o644); err != nil {
+		t.Fatalf("rewrite brief CRLF: %v", err)
+	}
+	sum := sha256.Sum256(crlf)
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T02:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1", Session: "w1", SHA256: hex.EncodeToString(sum[:])}); err != nil {
+		t.Fatalf("append dispatched r1: %v", err)
+	}
+	fails := verifyAll(t, dir, "T1")
+	if fails["T1"] {
+		t.Error("verify rejected a legacy raw sha256 of the current CRLF brief (T1)")
+	}
+}
+
+// TestVerifyT1RealContentChangeFails checks a genuine content change still
+// fails T1, even when dispatched through contentSHA.
+func TestVerifyT1RealContentChangeFails(t *testing.T) {
+	dir, err := initTask(t, []string{"exit 0"})
+	if err != nil {
+		t.Fatalf("initTask() error = %v", err)
+	}
+	briefPath := filepath.Join(dir, "brief.txt")
+	lfB, err := os.ReadFile(briefPath)
+	if err != nil {
+		t.Fatalf("read brief: %v", err)
+	}
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T02:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1", Session: "w1", SHA256: contentSHA(lfB)}); err != nil {
+		t.Fatalf("append dispatched r1: %v", err)
+	}
+	if err := os.WriteFile(briefPath, []byte("a genuinely different brief\n"), 0o644); err != nil {
+		t.Fatalf("rewrite brief: %v", err)
+	}
+	fails := verifyAll(t, dir, "T1")
+	if !fails["T1"] {
+		t.Error("verify did not flag a genuinely changed brief (T1)")
+	}
+}
+
 // TestVerifyT1AmendmentDoesNotWaiveCorrectionTamper checks an amendment never
 // hides a tampered correction delta.
 func TestVerifyT1AmendmentDoesNotWaiveCorrectionTamper(t *testing.T) {

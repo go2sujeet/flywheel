@@ -88,10 +88,9 @@ func TestRunSimClean(t *testing.T) {
 		t.Errorf("evs[0] kind = %q, want planned", evs[0].Kind)
 	}
 	d := evs[1]
-	briefSum := sha256.Sum256([]byte("one line brief\n"))
 	if d.Kind != "dispatched" || d.Attempt != "r1" || d.Adapter != "sim" ||
 		d.Model != model || d.Path != ".flywheel/runs/T1.r1.jsonl" ||
-		d.SHA256 != hex.EncodeToString(briefSum[:]) {
+		d.SHA256 != contentSHA([]byte("one line brief\n")) {
 		t.Errorf("dispatched event = %v", d)
 	}
 	if d.Brief != "b.txt" {
@@ -772,8 +771,7 @@ func TestRunDeltaWithoutResume(t *testing.T) {
 			d = e
 		}
 	}
-	sum := sha256.Sum256(deltaB)
-	deltaSum := hex.EncodeToString(sum[:])
+	deltaSum := contentSHA(deltaB)
 	if d.SHA256 != deltaSum {
 		t.Errorf("dispatched sha256 = %q, want the delta's %q (not the brief's)", d.SHA256, deltaSum)
 	}

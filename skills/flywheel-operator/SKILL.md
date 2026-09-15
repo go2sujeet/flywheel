@@ -61,6 +61,10 @@ flywheel init --dir <target>     # creates flywheel.md + .flywheel/state.json + 
 
 Requires: Go toolchain (to build), the `opencode` CLI (to dispatch workers), git.
 
+**Windows.** An existing factory whose `.flywheel/.gitattributes` predates init (init writes
+`* text eol=lf`) should add that line and re-checkout the briefs, so dispatch hashes and brief
+hashes agree despite CRLF.
+
 ## State model
 
 Everything is files — no database.
