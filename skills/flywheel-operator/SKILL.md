@@ -40,6 +40,7 @@ planned subcommands land — don't invoke commands that aren't built.
 | `flywheel verify [<task>...\|--all] [--json]` | **implemented** | Check the event log against rules T1, T3, T4, T5, T8; exit 0 or 6. |
 | `flywheel staff --role lead --session <session> [--model M]` | **implemented** | Register a factory role on the floor; the lead line then reads `lead <session> (<model>)`. |
 | `flywheel factory [--once\|--json]` | **implemented** | Render the floor — workers, units with run states, andon, output; bare `flywheel` opens it, one shot when stdout is not a terminal. |
+| `flywheel goal add "<title>" --id <id> [--accept CMD]... [--require TASK]...` | **implemented** | Record a factory goal; later add, list, show and set its status with `flywheel goal <add\|list\|show\|set>`. |
 | `flywheel plan`, `retry`, `handoff` | **planned** | Control plane: create tasks, resume, transfer between agents. |
 | `flywheel status`, `trace`, `artifacts` | **planned** | Data plane: in-flight work, task positions, worker outputs. |
 

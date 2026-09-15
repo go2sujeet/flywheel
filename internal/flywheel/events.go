@@ -52,6 +52,8 @@ type Event struct {
 	Baseline   map[string]string `json:"baseline,omitempty"`
 	Baselined  []string          `json:"baselined,omitempty"`
 	Persona    string            `json:"persona,omitempty"`
+	GoalID     string            `json:"goal_id,omitempty"`
+	Goal       *GoalSpec         `json:"goal,omitempty"`
 }
 
 // kinds is the set of event kinds understood by Derive.
@@ -70,6 +72,7 @@ var kinds = map[string]bool{
 	"owns_checked": true,
 	"inspected":    true,
 	"staffed":      true,
+	"goal":         true,
 }
 
 // isTaskChar reports whether c is allowed in a task id: ^[A-Za-z0-9._-]+$.
@@ -109,14 +112,31 @@ func attemptOK(s string) bool {
 // carry an empty task (every other kind requires one) but must carry a
 // session.
 func Validate(e Event) error {
-	if e.Kind != "staffed" && !taskOK(e.Task) {
+	if e.Kind != "staffed" && e.Kind != "goal" && !taskOK(e.Task) {
 		return fmt.Errorf("event task %q does not match ^[A-Za-z0-9._-]+$", e.Task)
 	}
 	if e.Kind == "staffed" && e.Session == "" {
 		return fmt.Errorf("staffed event must carry a session")
 	}
+	if e.Goal != nil && e.Kind != "goal" {
+		return fmt.Errorf("event kind %q cannot carry a goal", e.Kind)
+	}
+	if e.Kind == "goal" {
+		if e.Goal == nil {
+			return fmt.Errorf("goal event must carry a goal spec")
+		}
+		if !taskOK(e.Goal.ID) {
+			return fmt.Errorf("goal id %q does not match ^[A-Za-z0-9._-]+$", e.Goal.ID)
+		}
+		if e.Goal.Title == "" {
+			return fmt.Errorf("goal event must carry a non-empty title")
+		}
+		if !goalStatuses[e.Goal.Status] {
+			return fmt.Errorf("goal status %q is not one of active, met, failed, abandoned", e.Goal.Status)
+		}
+	}
 	if !kinds[e.Kind] {
-		return fmt.Errorf("event kind %q is not one of planned, dispatched, started, worker_plan, finished, report, reviewed, blocked, landed, amended, validated, owns_checked, inspected, staffed", e.Kind)
+		return fmt.Errorf("event kind %q is not one of planned, dispatched, started, worker_plan, finished, report, reviewed, blocked, landed, amended, validated, owns_checked, inspected, staffed, goal", e.Kind)
 	}
 	if e.Attempt != "" && !attemptOK(e.Attempt) {
 		return fmt.Errorf("event attempt %q does not match ^[rc][0-9]+$", e.Attempt)
