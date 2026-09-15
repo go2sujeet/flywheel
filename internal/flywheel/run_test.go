@@ -167,6 +167,56 @@ func TestRunSimClean(t *testing.T) {
 	}
 }
 
+// TestCostK checks the human-line cost formatter maps the issue's three
+// values exactly (issue #81).
+func TestCostK(t *testing.T) {
+	for _, tt := range []struct {
+		c    float64
+		want string
+	}{
+		{0, "0"},
+		{0.0015970879999999998, "0.0016"},
+		{1.23456, "1.2345"},
+	} {
+		if got := costK(tt.c); got != tt.want {
+			t.Errorf("costK(%v) = %q, want %q", tt.c, got, tt.want)
+		}
+	}
+}
+
+// TestRunSimCostRounded checks the finish line prints the rounded cost while
+// the finished event keeps the full float (issue #81).
+func TestRunSimCostRounded(t *testing.T) {
+	dir := setupTask(t)
+	model := fixturePath("longcost.jsonl", t)
+	if err := WriteConfig(dir, simConfig(model)); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	var buf bytes.Buffer
+	res, err := Run(dir, RunOptions{Task: "T1", Progress: &buf})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if res.Cost != 0.0015970879999999998 {
+		t.Errorf("result cost = %v, want the full float 0.0015970879999999998", res.Cost)
+	}
+	plog := string(buf.Bytes())
+	if !strings.Contains(plog, "cost=$0.0016") {
+		t.Errorf("finish line missing the rounded cost; got:\n%s", plog)
+	}
+	if strings.Contains(plog, "cost=$0.001597") {
+		t.Errorf("finish line prints the raw float; got:\n%s", plog)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	f := evs[len(evs)-1]
+	if f.Kind != "finished" || f.Cost != 0.0015970879999999998 {
+		t.Errorf("finished event = %v, want the full cost 0.0015970879999999998", f)
+	}
+}
+
 func TestRunSimAttemptNumbering(t *testing.T) {
 	dir := setupTask(t)
 	if err := WriteConfig(dir, simConfig(fixturePath("clean.jsonl", t))); err != nil {
