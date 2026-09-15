@@ -726,3 +726,98 @@ func TestRunStartFailedTruncatesStderrNote(t *testing.T) {
 		t.Errorf("finished = %v, want start-failed with note %q", f, want)
 	}
 }
+
+// TestRunDeltaWithoutResume checks a given --delta is the prompt even
+// without --resume: the dispatched event hashes the delta (not the brief),
+// the attempt is c1, the brief records the delta path, and no session flag
+// reaches the adapter (issue #106).
+func TestRunDeltaWithoutResume(t *testing.T) {
+	dir := setupTask(t)
+	if err := WriteConfig(dir, simConfig(fixturePath("clean.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	deltaB := []byte("fix the registry\n")
+	delta := filepath.Join(dir, "d.txt")
+	if err := os.WriteFile(delta, deltaB, 0o644); err != nil {
+		t.Fatalf("write delta: %v", err)
+	}
+	var got []RunRequest
+	commandHook = func(req RunRequest) { got = append(got, req) }
+	defer func() { commandHook = nil }()
+
+	var buf bytes.Buffer
+	res, err := Run(dir, RunOptions{Task: "T1", DeltaPath: delta, Progress: &buf})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if res.Attempt != "c1" {
+		t.Errorf("attempt = %q, want c1", res.Attempt)
+	}
+	if len(got) != 1 {
+		t.Fatalf("commandHook captured %d requests, want 1", len(got))
+	}
+	if got[0].Session != "" {
+		t.Errorf("session = %q, want empty (a delta without --resume starts a fresh session)", got[0].Session)
+	}
+	if got[0].PromptFile != delta {
+		t.Errorf("PromptFile = %q, want the delta %q", got[0].PromptFile, delta)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	var d Event
+	for _, e := range evs {
+		if e.Kind == "dispatched" {
+			d = e
+		}
+	}
+	sum := sha256.Sum256(deltaB)
+	deltaSum := hex.EncodeToString(sum[:])
+	if d.SHA256 != deltaSum {
+		t.Errorf("dispatched sha256 = %q, want the delta's %q (not the brief's)", d.SHA256, deltaSum)
+	}
+	if d.Attempt != "c1" {
+		t.Errorf("dispatched attempt = %q, want c1", d.Attempt)
+	}
+	if d.Brief != "d.txt" {
+		t.Errorf("dispatched brief = %q, want the delta path d.txt", d.Brief)
+	}
+}
+
+// TestRunResumeWithDelta checks --resume --delta D keeps resuming the
+// worker's session while sending D.
+func TestRunResumeWithDelta(t *testing.T) {
+	dir := setupTask(t)
+	if err := WriteConfig(dir, simConfig(fixturePath("clean.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	delta := filepath.Join(dir, "d2.txt")
+	if err := os.WriteFile(delta, []byte("resume with delta\n"), 0o644); err != nil {
+		t.Fatalf("write delta: %v", err)
+	}
+	var got []RunRequest
+	commandHook = func(req RunRequest) { got = append(got, req) }
+	defer func() { commandHook = nil }()
+
+	var buf bytes.Buffer
+	if _, err := Run(dir, RunOptions{Task: "T1", Progress: &buf}); err != nil {
+		t.Fatalf("Run() fresh error = %v", err)
+	}
+	res, err := Run(dir, RunOptions{Task: "T1", Resume: true, DeltaPath: delta, Progress: &buf})
+	if err != nil {
+		t.Fatalf("Run() resume error = %v", err)
+	}
+	if res.Attempt != "c1" {
+		t.Errorf("attempt = %q, want c1", res.Attempt)
+	}
+	if len(got) != 2 {
+		t.Fatalf("commandHook captured %d requests, want 2", len(got))
+	}
+	if got[1].Session != "ses_test_clean_001" {
+		t.Errorf("resume session = %q, want ses_test_clean_001", got[1].Session)
+	}
+	if got[1].PromptFile != delta {
+		t.Errorf("resume PromptFile = %q, want the delta %q", got[1].PromptFile, delta)
+	}
+}
