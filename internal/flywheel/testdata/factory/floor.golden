@@ -8,18 +8,18 @@ floor
 
 units (7)
   TASK               STAGE     ATT  SESSION      MODEL                    STEPS   AGE RUN          
-  capped             building  r1   ses_capped_~ openrouter/deepseek/dee~    1  3600 capped       
-  exploring          building  r1   ses_explori~ openrouter/deepseek/dee~   10  3600 exploring    
-  provider-error     building  r1   ses_perr_00~ openrouter/deepseek/dee~    0  3600 provider-err~
-  running            building  r1   ses_running~ openrouter/deepseek/dee~    1  3600 running      
-  stalled            building  r1   ses_stalled~ openrouter/deepseek/dee~    1  3600 stalled      
-  done               landed    r1   ses_done_00~ openrouter/deepseek/dee~    1  3598 done         
-  planned            planned                                                 0  3600 waiting      
+  capped             building  r1   ses_capped_~ openrouter/deepseek/dee~    1    1h capped       
+  exploring          building  r1   ses_explori~ openrouter/deepseek/dee~   10    1h exploring    
+  provider-error     building  r1   ses_perr_00~ openrouter/deepseek/dee~    0    1h provider-err~
+  running            building  r1   ses_running~ openrouter/deepseek/dee~    1    1h running      
+  stalled            building  r1   ses_stalled~ openrouter/deepseek/dee~    1    1h stalled      
+  done               landed    r1   ses_done_00~ openrouter/deepseek/dee~    1   59m done         
+  planned            planned                                                 0    1h waiting      
 
 andon (3)
-  capped          capped         3600s
-  provider-error  provider-error  3600s
-  stalled         stalled        3600s
+  capped          capped         1h
+  provider-error  provider-error  1h
+  stalled         stalled        1h
 
 output
   landed today 1  finished 1  first-pass n/a  rework 0.00  tokens 260  cost $0.0040

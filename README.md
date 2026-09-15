@@ -202,7 +202,7 @@ git still works.*
 | `flywheel verify` | available | Check the event log against the transition rules T1, T3, T4, T5, T8 (exit 0/6). |
 | `flywheel inspect` | available | Inspection verdict, refused unless the gauges' readings cover the tree as it is now (T3/T4/T8; exit 6). |
 | `flywheel audit` | planned ([#61](https://github.com/suzworx/flywheel/issues/61)) | External audit of first articles and samples. |
-| `flywheel land` | planned ([#45](https://github.com/suzworx/flywheel/issues/45)) | Local landing queue: rebase, re-measure, fast-forward. |
+| `flywheel land <task> --commit <sha>` | available | Record a landing for a passed task; refused without a passing inspection (exit 6). |
 | `flywheel factory` | available | Live terminal dashboard of the floor; bare `flywheel` opens it ([#63](https://github.com/suzworx/flywheel/issues/63)). |
 | `flywheel staff` | available | Register the lead (or another role) on the floor. |
 | `flywheel explain`, `flywheel context` | planned ([#58](https://github.com/suzworx/flywheel/issues/58)) | A task's traveler; the factory state sized for a joining agent. |

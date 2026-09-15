@@ -195,6 +195,7 @@ OPENCODE_CONFIG=skills/flywheel/references/worker-permissions.json \
 ```
 
 - Correct and gate-passing → surface the result; commit **only** if the user asked you to.
+- After merging, run `flywheel land <task> --commit <sha>` to record the landing.
 
 ## References
 
