@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -210,6 +211,56 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 	}
 	progress(o.Progress, o.Task+" "+attempt+" dispatched "+worker.Adapter+" "+model)
 
+	// The lease records that this run holds this attempt while the worker
+	// runs; the renewer moves renewed_at and expires_at forward every
+	// renew_interval and is stopped when the child exits. A flywheel run that
+	// is killed leaves the lease in place, and it expires on its own.
+	renewInterval, ttl := cfg.leaseTimings()
+	host, _ := os.Hostname()
+	leaseNow := now().UTC().Format(time.RFC3339Nano)
+	lease := Lease{
+		Task: o.Task, Attempt: attempt, PID: os.Getpid(), Host: host,
+		StartedAt: leaseNow, RenewedAt: leaseNow,
+		ExpiresAt: now().UTC().Add(ttl).Format(time.RFC3339Nano), RunFile: runRel,
+	}
+	if err := WriteLease(dir, lease); err != nil {
+		return Result{}, fmt.Errorf("write lease for %s.%s: %w", o.Task, attempt, err)
+	}
+	var leaseTicker *time.Ticker
+	var renewDone chan struct{}
+	var renewerExited chan struct{}
+	var stopOnce sync.Once
+	stopRenewer := func() {
+		stopOnce.Do(func() {
+			if leaseTicker != nil {
+				leaseTicker.Stop()
+			}
+			if renewDone != nil {
+				close(renewDone)
+				<-renewerExited
+			}
+		})
+	}
+	if renewInterval > 0 {
+		renewDone = make(chan struct{})
+		renewerExited = make(chan struct{})
+		leaseTicker = time.NewTicker(renewInterval)
+		go func() {
+			defer close(renewerExited)
+			for {
+				select {
+				case <-leaseTicker.C:
+					l := lease
+					l.RenewedAt = now().UTC().Format(time.RFC3339Nano)
+					l.ExpiresAt = now().UTC().Add(ttl).Format(time.RFC3339Nano)
+					_ = WriteLease(dir, l)
+				case <-renewDone:
+					return
+				}
+			}
+		}()
+	}
+
 	// Stream stdout into the run file while parsing. Stdin stays nil so the
 	// child reads the null device (closed stdin is mandatory).
 	hasher := sha256.New()
@@ -252,8 +303,10 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 			reason = "start-failed"
 			note = startNote
 		}
+		stopRenewer()
 		if aerr := AppendEvent(dir, Event{TS: "", Task: o.Task, Kind: "finished", Attempt: attempt, Reason: reason, Note: note, SHA256: runSHA}); aerr == nil {
 			progress(o.Progress, o.Task+" "+attempt+" finished rc=1 reason="+reason+" note="+note)
+			_ = RemoveLease(dir, o.Task, attempt)
 		}
 		_, _ = WriteState(dir)
 	}()
@@ -424,6 +477,7 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 		}
 	}
 	watchdog.Stop()
+	stopRenewer()
 
 	// Silent: no output within the start timeout; we already killed the process
 	// we started. Every return path records a finished event.
@@ -443,6 +497,7 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 			return Result{}, err
 		}
 		progress(o.Progress, o.Task+" "+attempt+" finished rc=-1 reason=silent")
+		_ = RemoveLease(dir, o.Task, attempt)
 		_, _ = WriteState(dir)
 		return Result{Attempt: attempt, RC: -1, Reason: "silent"}, nil
 	}
@@ -498,6 +553,7 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 		return Result{}, err
 	}
 	progress(o.Progress, o.Task+" "+attempt+fmt.Sprintf(" finished rc=%d reason=%s steps=%d tokens=%s cost=$%g", rc, reason, steps, tokensK(tok), cost))
+	_ = RemoveLease(dir, o.Task, attempt)
 	_, _ = WriteState(dir)
 	return Result{Attempt: attempt, Session: session, RC: rc, Reason: reason, Steps: steps, Tokens: tokPtr, Cost: cost}, nil
 }
