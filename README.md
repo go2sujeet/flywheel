@@ -218,6 +218,7 @@ git still works.*
 | `flywheel audit` | planned ([#61](https://github.com/suzworx/flywheel/issues/61)) | External audit of first articles and samples. |
 | `flywheel land <task> --commit <sha>` | available | Record a landing for a passed task; refused without a passing inspection (exit 6). |
 | `flywheel factory` | available | Live terminal dashboard of the floor; bare `flywheel` opens it ([#63](https://github.com/suzworx/flywheel/issues/63)). |
+| `flywheel controller` | available | The controller loop: one tick at a time (single-process lock), marking lost attempts and blocking tasks whose needs were scrapped. |
 | `flywheel staff` | available | Register the lead (or another role) on the floor. |
 | `flywheel goal` | available | Manage the factory's goals: add, list, show and set (add, list, show, set). |
 | `flywheel explain`, `flywheel context` | planned ([#58](https://github.com/suzworx/flywheel/issues/58)) | A task's traveler; the factory state sized for a joining agent. |

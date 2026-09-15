@@ -84,8 +84,13 @@ func Reconcile(s State, events []Event, obs Observed, p Policy, now time.Time) [
 
 	var keys []actionKey
 	// 1. lost: the current attempt of a dispatched or running task whose
-	// lease file exists in obs and is no longer live at now.
+	// lease file exists in obs and is no longer live at now. A task whose
+	// status is already lost is skipped, so a repeated tick never appends a
+	// second lost event for the same attempt.
 	for _, ts := range s.Tasks {
+		if ts.Status == "lost" {
+			continue
+		}
 		if ts.Status != "dispatched" && ts.Status != "running" {
 			continue
 		}

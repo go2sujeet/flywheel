@@ -527,6 +527,53 @@ func TestDeriveStaleLegacyEmptyDispatch(t *testing.T) {
 	}
 }
 
+func TestDeriveLostStatusAndStaleRule(t *testing.T) {
+	// A lost event for the task's current attempt sets status lost and is
+	// counted; one for any other attempt is stale, changes nothing and is
+	// recorded in Stale.
+	events := []Event{
+		{TS: "2026-09-14T10:00:00Z", Task: "T1", Kind: "planned"},
+		{TS: "2026-09-14T10:01:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1"},
+		{TS: "2026-09-14T10:02:00Z", Task: "T1", Kind: "lost", Attempt: "r1", Reason: "lease-expired"},
+	}
+	st := Derive(events)
+	ts, ok := findTask(st, "T1")
+	if !ok {
+		t.Fatal("T1 missing from derived state")
+	}
+	if ts.Status != "lost" {
+		t.Errorf("T1 status = %q, want lost", ts.Status)
+	}
+	if ts.Attempt != "r1" || ts.Reason != "lease-expired" {
+		t.Errorf("T1 attempt/reason = %q/%q, want r1/lease-expired", ts.Attempt, ts.Reason)
+	}
+	if st.Counts["lost"] != 1 {
+		t.Errorf("lost count = %d, want 1", st.Counts["lost"])
+	}
+
+	stale := []Event{
+		{TS: "2026-09-14T10:00:00Z", Task: "T2", Kind: "planned"},
+		{TS: "2026-09-14T10:01:00Z", Task: "T2", Kind: "dispatched", Attempt: "r1"},
+		{TS: "2026-09-14T10:01:30Z", Task: "T2", Kind: "dispatched", Attempt: "r2"},
+		{TS: "2026-09-14T10:02:00Z", Task: "T2", Kind: "lost", Attempt: "r1", Reason: "lease-expired"},
+	}
+	st2 := Derive(stale)
+	ts2, ok := findTask(st2, "T2")
+	if !ok {
+		t.Fatal("T2 missing from derived state")
+	}
+	if ts2.Status != "dispatched" || ts2.Attempt != "r2" {
+		t.Errorf("T2 status/attempt = %q/%q, want dispatched/r2 (stale lost changes nothing)",
+			ts2.Status, ts2.Attempt)
+	}
+	if want := []string{"lost r1"}; !slices.Equal(ts2.Stale, want) {
+		t.Errorf("T2 stale = %q, want %q", ts2.Stale, want)
+	}
+	if st2.Counts["lost"] != 0 {
+		t.Errorf("lost count = %d, want 0 (stale lost not counted)", st2.Counts["lost"])
+	}
+}
+
 func TestDeriveReplayDeterminism(t *testing.T) {
 	events := []Event{
 		{TS: "2026-09-14T10:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1"},
