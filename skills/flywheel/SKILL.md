@@ -111,7 +111,10 @@ Every brief asks the worker to state its plan in one text message before step 20
 verification tasks can go out before their dependencies land: dispatch them with a "planned, not
 found" addendum for what is not there yet, then send a follow-up delta once the dependency lands
 ([references/worker-brief.md#4-concurrency-disjoint-file-ownership-preserve-dirty-edits](references/worker-brief.md#4-concurrency-disjoint-file-ownership-preserve-dirty-edits)).
-Template and rules: [references/worker-brief.md](references/worker-brief.md).
+Template and rules: [references/worker-brief.md](references/worker-brief.md). When a later unit
+extends a shared file whose size a previous brief's gate bounded, amend that brief with
+`flywheel log --task <id> --kind amended --brief <path>`; the amended event explains the change
+to verify's T1, so validate no longer fails the stale gate.
 
 ### 2. Dispatch (canonical `flywheel run`, raw command as fallback)
 First choice: `flywheel log --task <id> --kind planned --brief <path>`, then `flywheel run <task>`

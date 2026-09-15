@@ -48,7 +48,7 @@ func logFlags() (*flag.FlagSet, *logOptions) {
 	fs.StringVar(&o.attempt, "attempt", "", "attempt (r1, c1, ...)")
 	fs.StringVar(&o.rc, "rc", "", "exit code")
 	fs.StringVar(&o.reason, "reason", "", "finish reason or classification")
-	fs.StringVar(&o.verdict, "verdict", "", "pass, correct, or reject")
+	fs.StringVar(&o.verdict, "verdict", "", "inspected verdict (pass, rework, scrap, or escalate) or reviewed verdict (pass, correct, or reject)")
 	fs.StringVar(&o.brief, "brief", "", "brief file")
 	fs.StringVar(&o.commit, "commit", "", "commit id")
 	fs.StringVar(&o.note, "note", "", "free-form note")

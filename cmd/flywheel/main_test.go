@@ -87,6 +87,21 @@ func TestHelpTextAllCommands(t *testing.T) {
 	}
 }
 
+// TestLogHelpNamesBothVerdictSets checks the log --verdict description names
+// each verdict set with its event kind, so a lead knows inspected and
+// reviewed take different verdicts.
+func TestLogHelpNamesBothVerdictSets(t *testing.T) {
+	h := helpText("log")
+	for _, want := range []string{
+		"inspected verdict (pass, rework, scrap, or escalate)",
+		"reviewed verdict (pass, correct, or reject)",
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("helpText(log) missing %q\n%s", want, h)
+		}
+	}
+}
+
 // TestBareAction checks the bare `flywheel` decision: open the factory view
 // when ./.flywheel exists, print the global help otherwise.
 func TestBareAction(t *testing.T) {
