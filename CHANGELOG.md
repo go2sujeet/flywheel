@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/suzworx/flywheel/compare/v0.4.0...v0.5.0) (2026-09-15)
+
+
+### Features
+
+* deterministic runtime phases 1-3: stale results, status, goals, leases ([#112](https://github.com/suzworx/flywheel/issues/112)) ([1f975a2](https://github.com/suzworx/flywheel/commit/1f975a2efd868777abec72dc6568c743c4c1af1a))
+* factory ages in human units; flywheel land records a merge ([#114](https://github.com/suzworx/flywheel/issues/114)) ([2941fc5](https://github.com/suzworx/flywheel/commit/2941fc5960666f40391c53ed35e329665a7e5b10)), closes [#110](https://github.com/suzworx/flywheel/issues/110)
+
+
+### Bug Fixes
+
+* brief hashes survive a checkout that converts line endings ([#115](https://github.com/suzworx/flywheel/issues/115)) ([adccd18](https://github.com/suzworx/flywheel/commit/adccd187671c57615f7cb825e2a22ee27f1e43d3)), closes [#111](https://github.com/suzworx/flywheel/issues/111)
+
 ## [0.4.0](https://github.com/suzworx/flywheel/compare/v0.3.0...v0.4.0) (2026-09-15)
 
 
