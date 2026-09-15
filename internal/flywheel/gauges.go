@@ -156,19 +156,27 @@ func ValidateTask(dir, task string, o ValidateOptions) (GaugeResult, error) {
 			res.GatesOK = false
 		}
 	}
-	return finishValidate(o.Dir, wd, task, attempt, tree, header.Owns, res)
+	return finishValidate(o.Dir, wd, task, attempt, tree, header.Owns, events, res)
 }
 
 // finishValidate runs the owns check, records owns_checked, refreshes derived
-// state, and returns the result.
-func finishValidate(dir, wd, task, attempt, tree string, owns []string, res GaugeResult) (GaugeResult, error) {
+// state, and returns the result. A changed path outside owns is excused when
+// it was in the dispatched baseline and its content is unchanged: the lead or
+// another worker left it dirty before this unit started.
+func finishValidate(dir, wd, task, attempt, tree string, owns []string, events []Event, res GaugeResult) (GaugeResult, error) {
 	changed, err := changedPaths(wd)
 	if err != nil {
 		return GaugeResult{}, err
 	}
+	base := baselineFor(events, task)
 	var outside []string
+	var baselined []string
 	for _, p := range changed {
 		if !ownsContains(owns, p) {
+			if bh, ok := base[p]; ok && fileSHA(wd, p) == bh {
+				baselined = append(baselined, p)
+				continue
+			}
 			outside = append(outside, p)
 		}
 	}
@@ -176,7 +184,7 @@ func finishValidate(dir, wd, task, attempt, tree string, owns []string, res Gaug
 	res.OwnsOK = len(outside) == 0
 	if err := AppendEvent(dir, Event{
 		TS: "", Task: task, Kind: "owns_checked", Attempt: attempt,
-		Tree: tree, Outside: outside, Persona: "supervisor",
+		Tree: tree, Outside: outside, Baselined: baselined, Persona: "supervisor",
 	}); err != nil {
 		return GaugeResult{}, err
 	}
@@ -338,6 +346,44 @@ func gitRead(wd string, args []string) (string, error) {
 		return "", fmt.Errorf("git %v failed (rc=%d): %s", args, rc, strings.TrimSpace(string(append(stderr, stdout...))))
 	}
 	return string(stdout), nil
+}
+
+// fileSHA returns the SHA-256 hex of the file p inside wd, or "deleted"
+// when the file no longer exists.
+func fileSHA(wd, p string) string {
+	b, err := os.ReadFile(filepath.Join(wd, filepath.FromSlash(p)))
+	if err != nil {
+		return "deleted"
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// computeBaseline hashes every path changedPaths lists (the same read-only
+// git commands the owns check uses) at this moment, for recording on the
+// dispatched event. Not a git repo: no baseline.
+func computeBaseline(wd string) map[string]string {
+	paths, err := changedPaths(wd)
+	if err != nil {
+		return map[string]string{}
+	}
+	base := map[string]string{}
+	for _, p := range paths {
+		base[p] = fileSHA(wd, p)
+	}
+	return base
+}
+
+// baselineFor returns the first dispatched event's baseline for the task,
+// whatever its size: an empty map when that event has none. Later dispatched
+// events never widen the excuse set.
+func baselineFor(events []Event, task string) map[string]string {
+	for _, e := range events {
+		if e.Task == task && e.Kind == "dispatched" {
+			return e.Baseline
+		}
+	}
+	return nil
 }
 
 // ownsContains reports whether a changed path is inside the owns boundary.

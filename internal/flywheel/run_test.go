@@ -37,16 +37,6 @@ func simConfig(model string) Config {
 	}
 }
 
-// shaOf returns the hex SHA-256 of the file at path.
-func shaOf(path string, t *testing.T) string {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
-}
-
 // normLF normalises \r\n to \n so fixture bytes compare equal on CRLF
 // checkouts.
 func normLF(b []byte) string {
@@ -296,6 +286,53 @@ func TestRunUnplannedTaskErrors(t *testing.T) {
 		t.Fatal("Run() unplanned task: got nil error, want refusal")
 	} else if !strings.Contains(err.Error(), "no planned event") {
 		t.Errorf("Run() error = %v, want 'no planned event'", err)
+	}
+}
+
+// TestRunRecordsBaseline checks a dispatch in a git repo hashes every dirty
+// path and records the baseline on the dispatched event.
+func TestRunRecordsBaseline(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	git(t, dir, []string{"init", "-q"})
+	git(t, dir, []string{"config", "core.autocrlf", "false"})
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(".flywheel/\nflywheel.md\n"), 0o644); err != nil {
+		t.Fatalf("write .gitignore: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package x\n"), 0o644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("one line brief\n"), 0o644); err != nil {
+		t.Fatalf("write brief: %v", err)
+	}
+	git(t, dir, []string{"add", "-A"})
+	git(t, dir, []string{"commit", "-m", "init"})
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T00:00:00Z", Task: "T1", Kind: "planned", Brief: "b.txt"}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "dirty.go"), []byte("package y\n"), 0o644); err != nil {
+		t.Fatalf("write dirty.go: %v", err)
+	}
+	if err := WriteConfig(dir, simConfig(fixturePath("clean.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	var buf bytes.Buffer
+	if _, err := Run(dir, RunOptions{Task: "T1", Progress: &buf}); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	d := evs[1]
+	if d.Kind != "dispatched" {
+		t.Fatalf("evs[1] = %v, want the dispatched event", d)
+	}
+	want := shaOf(filepath.Join(dir, "dirty.go"), t)
+	if len(d.Baseline) != 1 || d.Baseline["dirty.go"] != want {
+		t.Errorf("dispatched baseline = %v, want {dirty.go: %q}", d.Baseline, want)
 	}
 }
 

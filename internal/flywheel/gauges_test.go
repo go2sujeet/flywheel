@@ -1,6 +1,8 @@
 package flywheel
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -134,6 +136,179 @@ func TestValidateFailingGate(t *testing.T) {
 	if !res.OwnsOK {
 		t.Error("ownsOK should be true: nothing outside owns")
 	}
+}
+
+// shaOf returns the hex SHA-256 of the file at path.
+func shaOf(path string, t *testing.T) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// dispatchedWithBaseline appends a dispatched event carrying a baseline of
+// every currently dirty path, the way run.go records one at dispatch.
+func dispatchedWithBaseline(t *testing.T, dir string) {
+	t.Helper()
+	paths, err := changedPaths(dir)
+	if err != nil {
+		t.Fatalf("changedPaths() error = %v", err)
+	}
+	base := map[string]string{}
+	for _, p := range paths {
+		base[p] = shaOf(filepath.Join(dir, filepath.FromSlash(p)), t)
+	}
+	if err := AppendEvent(dir, Event{TS: "2026-09-12T01:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1", Baseline: base}); err != nil {
+		t.Fatalf("AppendEvent() dispatched error = %v", err)
+	}
+}
+
+// TestValidateBaselineDirtyBeforeDispatch checks a file already dirty when
+// dispatched is not reported outside owns and is recorded in baselined.
+func TestValidateBaselineDirtyBeforeDispatch(t *testing.T) {
+	dir, err := initTask(t, []string{"exit 0"})
+	if err != nil {
+		t.Fatalf("initTask() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("lead's edit\n"), 0o644); err != nil {
+		t.Fatalf("write b.txt: %v", err)
+	}
+	dispatchedWithBaseline(t, dir)
+	res, err := ValidateTask(dir, "T1", ValidateOptions{Dir: dir})
+	if err != nil {
+		t.Fatalf("ValidateTask() error = %v", err)
+	}
+	if !res.OwnsOK || !res.OK() {
+		t.Errorf("OwnsOK = %v, want true (an unchanged baselined file is not outside)", res.OwnsOK)
+	}
+	if len(res.Outside) != 0 {
+		t.Errorf("outside = %v, want nothing", res.Outside)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	for _, e := range evs {
+		if e.Kind == "owns_checked" {
+			if len(e.Baselined) != 1 || e.Baselined[0] != "b.txt" {
+				t.Errorf("owns_checked baselined = %v, want [b.txt]", e.Baselined)
+			}
+			if len(e.Outside) != 0 {
+				t.Errorf("owns_checked outside = %v, want nothing", e.Outside)
+			}
+		}
+	}
+}
+
+// TestValidateBaselineChangedAfterDispatch checks a baselined file the unit
+// modified after dispatch is judged normally: reported outside.
+func TestValidateBaselineChangedAfterDispatch(t *testing.T) {
+	dir, err := initTask(t, []string{"exit 0"})
+	if err != nil {
+		t.Fatalf("initTask() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("lead's edit\n"), 0o644); err != nil {
+		t.Fatalf("write b.txt: %v", err)
+	}
+	dispatchedWithBaseline(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("unit's edit\n"), 0o644); err != nil {
+		t.Fatalf("rewrite b.txt: %v", err)
+	}
+	res, err := ValidateTask(dir, "T1", ValidateOptions{Dir: dir})
+	if err != nil {
+		t.Fatalf("ValidateTask() error = %v", err)
+	}
+	if res.OwnsOK || res.OK() {
+		t.Errorf("OwnsOK = %v, want false (the unit touched the file after dispatch)", res.OwnsOK)
+	}
+	if len(res.Outside) != 1 || res.Outside[0] != "b.txt" {
+		t.Errorf("outside = %v, want [b.txt]", res.Outside)
+	}
+}
+
+// TestValidateCleanBaselineChangesNothing checks a baseline over a clean tree
+// changes nothing: no outside paths and nothing recorded in baselined.
+func TestValidateCleanBaselineChangesNothing(t *testing.T) {
+	dir, err := initTask(t, []string{"exit 0"})
+	if err != nil {
+		t.Fatalf("initTask() error = %v", err)
+	}
+	dispatchedWithBaseline(t, dir)
+	res, err := ValidateTask(dir, "T1", ValidateOptions{Dir: dir})
+	if err != nil {
+		t.Fatalf("ValidateTask() error = %v", err)
+	}
+	if !res.OwnsOK || !res.OK() {
+		t.Errorf("OwnsOK = %v, want true (a clean baseline changes nothing)", res.OwnsOK)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	for _, e := range evs {
+		if e.Kind == "owns_checked" && (len(e.Baselined) != 0 || len(e.Outside) != 0) {
+			t.Errorf("owns_checked baselined/outside = %v/%v, want nothing", e.Baselined, e.Outside)
+		}
+	}
+}
+
+// TestValidateBaselineIgnoresCorrectionBaseline checks only the FIRST
+// dispatched event's baseline excuses files: a correction attempt is
+// dispatched after the first attempt's edits, so its baseline must never
+// widen the excuse set.
+func TestValidateBaselineIgnoresCorrectionBaseline(t *testing.T) {
+	t.Run("empty first baseline stays empty", func(t *testing.T) {
+		dir, err := initTask(t, []string{"exit 0"})
+		if err != nil {
+			t.Fatalf("initTask() error = %v", err)
+		}
+		dispatchedWithBaseline(t, dir)
+		if err := os.WriteFile(filepath.Join(dir, "outside.go"), []byte("stray\n"), 0o644); err != nil {
+			t.Fatalf("write outside.go: %v", err)
+		}
+		if err := AppendEvent(dir, Event{TS: "2026-09-12T02:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "c1", Baseline: map[string]string{"outside.go": shaOf(filepath.Join(dir, "outside.go"), t)}}); err != nil {
+			t.Fatalf("AppendEvent() correction dispatched error = %v", err)
+		}
+		res, err := ValidateTask(dir, "T1", ValidateOptions{Dir: dir})
+		if err != nil {
+			t.Fatalf("ValidateTask() error = %v", err)
+		}
+		if res.OwnsOK || res.OK() {
+			t.Errorf("OwnsOK = %v, want false (a correction baseline must not excuse the first attempt's stray file)", res.OwnsOK)
+		}
+		if len(res.Outside) != 1 || res.Outside[0] != "outside.go" {
+			t.Errorf("outside = %v, want [outside.go]", res.Outside)
+		}
+	})
+	t.Run("later baseline never widens", func(t *testing.T) {
+		dir, err := initTask(t, []string{"exit 0"})
+		if err != nil {
+			t.Fatalf("initTask() error = %v", err)
+		}
+		h1 := shaOf(filepath.Join(dir, "a.go"), t)
+		if err := AppendEvent(dir, Event{TS: "2026-09-12T01:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1", Baseline: map[string]string{"a.go": h1}}); err != nil {
+			t.Fatalf("AppendEvent() dispatched error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte("package b\n"), 0o644); err != nil {
+			t.Fatalf("write b.go: %v", err)
+		}
+		h2 := shaOf(filepath.Join(dir, "b.go"), t)
+		if err := AppendEvent(dir, Event{TS: "2026-09-12T02:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "c1", Baseline: map[string]string{"a.go": h1, "b.go": h2}}); err != nil {
+			t.Fatalf("AppendEvent() correction dispatched error = %v", err)
+		}
+		res, err := ValidateTask(dir, "T1", ValidateOptions{Dir: dir})
+		if err != nil {
+			t.Fatalf("ValidateTask() error = %v", err)
+		}
+		if res.OwnsOK || res.OK() {
+			t.Errorf("OwnsOK = %v, want false (b.go is outside despite the correction baseline)", res.OwnsOK)
+		}
+		if len(res.Outside) != 1 || res.Outside[0] != "b.go" {
+			t.Errorf("outside = %v, want [b.go]", res.Outside)
+		}
+	})
 }
 
 func TestValidateOutOfOwns(t *testing.T) {

@@ -192,10 +192,17 @@ func Run(dir string, o RunOptions) (res Result, err error) {
 		return Result{}, err
 	}
 
+	// Baseline: hash every path dirty at dispatch (the same read-only git
+	// commands the owns check uses) so validate can tell this unit's edits
+	// from the lead's or another worker's pre-existing ones. Not a git repo:
+	// no baseline.
+	baseline := computeBaseline(dir)
+
 	if err := AppendEvent(dir, Event{
 		TS: "", Task: o.Task, Kind: "dispatched", Attempt: attempt,
 		Adapter: worker.Adapter, Model: model, Path: runRel, SHA256: promptSHA,
 		Brief: promptBriefField, Note: "policy sha256=" + policySHA,
+		Baseline: baseline,
 	}); err != nil {
 		return Result{}, err
 	}
