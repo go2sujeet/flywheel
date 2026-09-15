@@ -108,7 +108,14 @@ func printStatus(rep flywheel.StatusReport) {
 		}
 	}
 	fmt.Println()
-	fmt.Printf("Attempts: live %d, stale %d\n", rep.Attempts.Live, rep.Attempts.Stale)
+	fmt.Printf("Leases: live %d  expired %d\n", rep.Leases.Live, rep.Leases.Expired)
+	fmt.Printf("Attempts: live %d  lost %d  stale %d\n", rep.Attempts.Live, rep.Attempts.Lost, rep.Attempts.Stale)
+	for _, l := range rep.Attempts.LostList {
+		fmt.Printf("  lost %s %s: lease expired at %s\n", l.Task, l.Attempt, l.ExpiresAt)
+	}
+	if rep.Leases.Skipped > 0 {
+		fmt.Printf("  skipped %d malformed lease file(s)\n", rep.Leases.Skipped)
+	}
 	fmt.Printf("Last event: %s\n", describeLast(rep.LastEventAt))
 	fmt.Printf("Last meaningful progress: %s\n", describeLast(rep.LastProgressAt))
 	fmt.Printf("Andon: %d\n", rep.Andon)

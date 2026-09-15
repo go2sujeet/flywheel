@@ -2,7 +2,9 @@ package flywheel
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -14,6 +16,7 @@ type StatusReport struct {
 	Tasks          StatusTasks    `json:"tasks"`
 	Attempts       StatusAttempts `json:"attempts"`
 	Goals          StatusGoals    `json:"goals"`
+	Leases         StatusLeases   `json:"leases"`
 	LastEventAt    *LastEvent     `json:"last_event_at,omitempty"`
 	LastProgressAt *LastEvent     `json:"last_progress_at,omitempty"`
 	Andon          int            `json:"andon"`
@@ -53,11 +56,33 @@ type StatusTasks struct {
 }
 
 // StatusAttempts summarises the attempts: live counts the tasks whose current
-// attempt is dispatched or running; stale totals the stale entries across
-// tasks.
+// attempt is dispatched or running; lost counts the attempts whose lease file
+// has expired at now, one per LostList entry; stale totals the stale entries
+// across tasks.
 type StatusAttempts struct {
-	Live  int `json:"live"`
-	Stale int `json:"stale"`
+	Live     int           `json:"live"`
+	Lost     int           `json:"lost"`
+	Stale    int           `json:"stale"`
+	LostList []LostAttempt `json:"lost_list,omitempty"`
+}
+
+// LostAttempt is one lost attempt with its evidence: the task is still
+// dispatched or running, its current attempt has a lease file, and the lease
+// has expired at now.
+type LostAttempt struct {
+	Task      string `json:"task"`
+	Attempt   string `json:"attempt"`
+	ExpiresAt string `json:"expires_at"`
+	RunFile   string `json:"run_file"`
+}
+
+// StatusLeases counts the lease files in .flywheel/leases, judged by LeaseLive
+// at now: live while its expiry is still ahead, expired once past it. Skipped
+// counts the lease files ReadLeases could not read or parse.
+type StatusLeases struct {
+	Live    int `json:"live"`
+	Expired int `json:"expired"`
+	Skipped int `json:"skipped,omitempty"`
 }
 
 // LastEvent is one timestamp plus its age in whole seconds from now.
@@ -77,7 +102,9 @@ func Status(dir string, now time.Time) (StatusReport, error) {
 	st := Derive(w.events)
 	var rep StatusReport
 	rep.Factory = filepath.Base(dir)
+	cur := map[string]TaskState{}
 	for _, ts := range st.Tasks {
+		cur[ts.ID] = ts
 		rep.Tasks.Total++
 		switch ts.Status {
 		case "planned":
@@ -106,6 +133,27 @@ func Status(dir string, now time.Time) (StatusReport, error) {
 			rep.Attempts.Live++
 		}
 		rep.Attempts.Stale += len(ts.Stale)
+	}
+	leases, lerr := ReadLeases(dir)
+	if lerr != nil {
+		rep.Leases.Skipped = countLeaseFiles(dir) - len(leases)
+	}
+	for _, l := range leases {
+		if LeaseLive(l, now) {
+			rep.Leases.Live++
+			continue
+		}
+		rep.Leases.Expired++
+		ts, ok := cur[l.Task]
+		if !ok || l.Attempt == "" || l.Attempt != ts.Attempt {
+			continue
+		}
+		if ts.Status != "dispatched" && ts.Status != "running" {
+			continue
+		}
+		rep.Attempts.Lost++
+		lost := LostAttempt{Task: l.Task, Attempt: l.Attempt, ExpiresAt: l.ExpiresAt, RunFile: l.RunFile}
+		rep.Attempts.LostList = append(rep.Attempts.LostList, lost)
 	}
 	rep.LastEventAt = latestEvent(w.events, now, func(e Event) bool { return true })
 	rep.LastProgressAt = latestEvent(w.events, now, func(e Event) bool {
@@ -154,4 +202,21 @@ func latestEvent(events []Event, now time.Time, match func(Event) bool) *LastEve
 	p := new(LastEvent)
 	*p = LastEvent{TS: ts, Age: ageOfTime(best, now)}
 	return p
+}
+
+// countLeaseFiles counts the lease candidates in .flywheel/leases with the
+// same filter ReadLeases applies, so status can report how many were skipped.
+func countLeaseFiles(dir string) int {
+	entries, err := os.ReadDir(filepath.Join(dir, ".flywheel", "leases"))
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		n++
+	}
+	return n
 }

@@ -91,6 +91,12 @@ func TestStatusFixture(t *testing.T) {
 	if rep.Attempts.Live != 3 {
 		t.Errorf("attempts live = %d, want 3", rep.Attempts.Live)
 	}
+	if rep.Attempts.Lost != 0 || len(rep.Attempts.LostList) != 0 {
+		t.Errorf("attempts lost = %d, want 0", rep.Attempts.Lost)
+	}
+	if rep.Leases.Live != 0 || rep.Leases.Expired != 0 || rep.Leases.Skipped != 0 {
+		t.Errorf("leases = %+v, want none", rep.Leases)
+	}
 	if rep.Attempts.Stale != 1 {
 		t.Errorf("attempts stale = %d, want 1", rep.Attempts.Stale)
 	}
@@ -136,7 +142,8 @@ func TestStatusJSONRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.Factory != rep.Factory || got.Tasks != rep.Tasks || got.Attempts != rep.Attempts || got.Andon != rep.Andon {
+	if got.Factory != rep.Factory || !reflect.DeepEqual(got.Tasks, rep.Tasks) ||
+		!reflect.DeepEqual(got.Attempts, rep.Attempts) || got.Andon != rep.Andon {
 		t.Errorf("round-trip mismatch: got %+v, want %+v", got, rep)
 	}
 	if !reflect.DeepEqual(got.Goals, rep.Goals) {
@@ -167,10 +174,103 @@ func TestStatusEmptyFactory(t *testing.T) {
 	if rep.Attempts.Live != 0 || rep.Attempts.Stale != 0 {
 		t.Errorf("attempts = %+v, want 0/0", rep.Attempts)
 	}
+	if rep.Leases.Live != 0 || rep.Leases.Expired != 0 || rep.Leases.Skipped != 0 {
+		t.Errorf("leases = %+v, want none", rep.Leases)
+	}
 	if rep.Andon != 0 {
 		t.Errorf("andon = %d, want 0", rep.Andon)
 	}
 	if !reflect.DeepEqual(rep.Goals, StatusGoals{}) {
 		t.Errorf("goals = %+v, want none (prints Goals: none)", rep.Goals)
+	}
+}
+
+// writeLease writes one lease file for the leaseStatusFixture.
+func writeLease(t *testing.T, dir, task, attempt, expiresAt string) {
+	t.Helper()
+	if err := WriteLease(dir, Lease{
+		Task: task, Attempt: attempt, PID: 1, Host: "h",
+		StartedAt: "2026-09-14T00:00:00Z", RenewedAt: "2026-09-14T00:05:00Z",
+		ExpiresAt: expiresAt, RunFile: ".flywheel/runs/" + task + "." + attempt + ".jsonl",
+	}); err != nil {
+		t.Fatalf("write lease %s.%s: %v", task, attempt, err)
+	}
+}
+
+// leaseStatusFixture builds an event log plus lease files: t-live is running
+// with a live lease, t-lost and t-other are dispatched with expired leases
+// (both lost), t-done finished with an expired lease (expired, not lost),
+// t-nolease is dispatched with no lease file, and one lease file is malformed.
+func leaseStatusFixture(t *testing.T) string {
+	dir := t.TempDir()
+	events := []Event{
+		{TS: "2026-09-14T00:00:00Z", Task: "t-live", Kind: "planned", Brief: "b.txt"},
+		{TS: "2026-09-14T00:00:00Z", Task: "t-live", Kind: "dispatched", Attempt: "r1"},
+		{TS: "2026-09-14T00:00:00Z", Task: "t-live", Kind: "started"},
+		{TS: "2026-09-14T00:00:00Z", Task: "t-lost", Kind: "planned", Brief: "b.txt"},
+		{TS: "2026-09-14T00:00:00Z", Task: "t-lost", Kind: "dispatched", Attempt: "r1"},
+		{TS: "2026-09-14T00:00:00Z", Task: "t-other", Kind: "planned", Brief: "b.txt"},
+		{TS: "2026-09-14T00:00:00Z", Task: "t-other", Kind: "dispatched", Attempt: "r1"},
+		{TS: "2026-09-14T00:00:00Z", Task: "t-done", Kind: "planned", Brief: "b.txt"},
+		{TS: "2026-09-14T00:00:00Z", Task: "t-done", Kind: "dispatched", Attempt: "r1"},
+		{TS: "2026-09-14T00:00:00Z", Task: "t-done", Kind: "finished", Attempt: "r1"},
+		{TS: "2026-09-14T00:00:00Z", Task: "t-nolease", Kind: "planned", Brief: "b.txt"},
+		{TS: "2026-09-14T00:00:00Z", Task: "t-nolease", Kind: "dispatched", Attempt: "r1"},
+	}
+	for _, e := range events {
+		if err := AppendEvent(dir, e); err != nil {
+			t.Fatalf("append event: %v", err)
+		}
+	}
+	writeLease(t, dir, "t-live", "r1", "2026-09-14T02:00:00Z")
+	writeLease(t, dir, "t-lost", "r1", "2026-09-14T00:10:00Z")
+	writeLease(t, dir, "t-other", "r1", "2026-09-14T00:20:00Z")
+	writeLease(t, dir, "t-done", "r1", "2026-09-14T00:15:00Z")
+	if err := os.WriteFile(filepath.Join(dir, ".flywheel", "leases", "t-bad.r1.json"), []byte("not a lease"), 0o644); err != nil {
+		t.Fatalf("write malformed lease: %v", err)
+	}
+	return dir
+}
+
+// TestStatusLeases covers the lease report: one live lease; expired leases on
+// a dispatched current attempt (lost, with evidence), on a finished task
+// (expired, not lost) and none for a task with no lease file (neither); and a
+// malformed lease file (skipped and reported). All at the injected now.
+func TestStatusLeases(t *testing.T) {
+	dir := leaseStatusFixture(t)
+	now := statusNow(t)
+	rep, err := Status(dir, now)
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if rep.Leases.Live != 1 || rep.Leases.Expired != 3 || rep.Leases.Skipped != 1 {
+		t.Errorf("leases = live %d, expired %d, skipped %d; want 1/3/1",
+			rep.Leases.Live, rep.Leases.Expired, rep.Leases.Skipped)
+	}
+	if rep.Attempts.Live != 4 || rep.Attempts.Lost != 2 || rep.Attempts.Stale != 0 {
+		t.Errorf("attempts = live %d, lost %d, stale %d; want 4/2/0",
+			rep.Attempts.Live, rep.Attempts.Lost, rep.Attempts.Stale)
+	}
+	if len(rep.Attempts.LostList) != 2 {
+		t.Fatalf("lost list = %d entries, want 2", len(rep.Attempts.LostList))
+	}
+	first, second := rep.Attempts.LostList[0], rep.Attempts.LostList[1]
+	if first.Task != "t-lost" || first.Attempt != "r1" ||
+		first.ExpiresAt != "2026-09-14T00:10:00Z" || first.RunFile != ".flywheel/runs/t-lost.r1.jsonl" {
+		t.Errorf("lost[0] = %+v, want t-lost r1 with the expired-at evidence", first)
+	}
+	if second.Task != "t-other" || second.Attempt != "r1" {
+		t.Errorf("lost[1] = %+v, want t-other r1 (sorted by task)", second)
+	}
+	b, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got StatusReport
+	if uerr := json.Unmarshal(b, &got); uerr != nil {
+		t.Fatalf("unmarshal: %v", uerr)
+	}
+	if !reflect.DeepEqual(got.Attempts, rep.Attempts) || !reflect.DeepEqual(got.Leases, rep.Leases) {
+		t.Errorf("round-trip mismatch: got %+v, want %+v", got, rep)
 	}
 }
