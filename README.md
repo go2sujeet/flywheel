@@ -195,16 +195,17 @@ git still works.*
 | `flywheel state` | available (v0.2.0) | Derive and print state from the event log. |
 | `flywheel config` | available | Read, validate and `set` `.flywheel/config.json` (config package merged). |
 | `flywheel run` | available | Dispatch an OpenCode worker and capture the run. |
-| `flywheel status` | planned ([#21](https://github.com/suzworx/flywheel/issues/21)) | Classify the state of runs and tasks. |
+| `flywheel status` | available ([#21](https://github.com/suzworx/flywheel/issues/21)) | Summarize the factory: task counts, live/stale attempts, last event and progress, andon. |
 | `flywheel watch` | planned ([#22](https://github.com/suzworx/flywheel/issues/22)) | Watch the line, one readable line per transition. |
 | `flywheel validate` | available | Machine gauges: run a task's gate: lines on the exact tree and check owns (exit 0/5). |
 | `flywheel supervise` | planned ([#55](https://github.com/suzworx/flywheel/issues/55)) | Machine gauges: measure finished units, run the gates. |
 | `flywheel verify` | available | Check the event log against the transition rules T1, T3, T4, T5, T8 (exit 0/6). |
 | `flywheel inspect` | available | Inspection verdict, refused unless the gauges' readings cover the tree as it is now (T3/T4/T8; exit 6). |
 | `flywheel audit` | planned ([#61](https://github.com/suzworx/flywheel/issues/61)) | External audit of first articles and samples. |
-| `flywheel land` | planned ([#45](https://github.com/suzworx/flywheel/issues/45)) | Local landing queue: rebase, re-measure, fast-forward. |
+| `flywheel land <task> --commit <sha>` | available | Record a landing for a passed task; refused without a passing inspection (exit 6). |
 | `flywheel factory` | available | Live terminal dashboard of the floor; bare `flywheel` opens it ([#63](https://github.com/suzworx/flywheel/issues/63)). |
 | `flywheel staff` | available | Register the lead (or another role) on the floor. |
+| `flywheel goal` | available | Manage the factory's goals: add, list, show and set (add, list, show, set). |
 | `flywheel explain`, `flywheel context` | planned ([#58](https://github.com/suzworx/flywheel/issues/58)) | A task's traveler; the factory state sized for a joining agent. |
 | `flywheel trace` | planned ([#62](https://github.com/suzworx/flywheel/issues/62)) | Everything one session did, across tasks. |
 | `flywheel feedback` | planned ([#37](https://github.com/suzworx/flywheel/issues/37)–[#40](https://github.com/suzworx/flywheel/issues/40)) | Turn signals into learnings; export and submit upstream. |

@@ -819,3 +819,162 @@ func TestRunResumeWithDelta(t *testing.T) {
 		t.Errorf("resume PromptFile = %q, want the delta %q", got[1].PromptFile, delta)
 	}
 }
+
+// leaseFor returns the lease of one attempt from .flywheel/leases.
+func leaseFor(t *testing.T, dir, task, attempt string) (Lease, bool) {
+	t.Helper()
+	leases, err := ReadLeases(dir)
+	if err != nil {
+		t.Fatalf("ReadLeases() error = %v", err)
+	}
+	for _, l := range leases {
+		if l.Task == task && l.Attempt == attempt {
+			return l, true
+		}
+	}
+	return Lease{}, false
+}
+
+// waitFor polls cond until it reports true or the timeout expires.
+func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+// TestRunWritesAndRenewsLease checks a run writes its lease before the
+// worker's first line, renews it at least once when the renew interval is
+// small, and removes it after finished.
+func TestRunWritesAndRenewsLease(t *testing.T) {
+	dir := setupTask(t)
+	cfg := simConfig(fixturePath("clean.jsonl", t))
+	cfg.Lease = &LeaseConfig{RenewInterval: "20ms", TTL: "2s"}
+	if err := WriteConfig(dir, cfg); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	type outcome struct {
+		res Result
+		err error
+	}
+	done := make(chan outcome, 1)
+	var buf bytes.Buffer
+	go func() {
+		res, err := Run(dir, RunOptions{Task: "T1", SimDelay: 800 * time.Millisecond, Progress: &buf})
+		done <- outcome{res, err}
+	}()
+
+	waitFor(t, 2*time.Second, "the lease to be written before the first line", func() bool {
+		_, ok := leaseFor(t, dir, "T1", "r1")
+		return ok
+	})
+	l, ok := leaseFor(t, dir, "T1", "r1")
+	if !ok {
+		t.Fatal("lease missing right after it appeared")
+	}
+	if l.Task != "T1" || l.Attempt != "r1" || l.PID <= 0 || l.Host == "" ||
+		l.RunFile != ".flywheel/runs/T1.r1.jsonl" {
+		t.Errorf("lease = %+v, want task T1, attempt r1, a pid, a host and the run file", l)
+	}
+	if _, err := time.Parse(time.RFC3339, l.StartedAt); err != nil {
+		t.Errorf("started_at %q is not RFC3339: %v", l.StartedAt, err)
+	}
+	firstExpires := l.ExpiresAt
+	waitFor(t, 2*time.Second, "a renewal (expires_at moves forward)", func() bool {
+		l, ok := leaseFor(t, dir, "T1", "r1")
+		return ok && l.ExpiresAt > firstExpires
+	})
+
+	select {
+	case o := <-done:
+		if o.err != nil {
+			t.Fatalf("Run() error = %v", o.err)
+		}
+		if o.res.Attempt != "r1" {
+			t.Errorf("attempt = %q, want r1", o.res.Attempt)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run() did not finish in time")
+	}
+	if leases, err := ReadLeases(dir); err != nil || len(leases) != 0 {
+		t.Errorf("leases after finished = %v, %v; want none", leases, err)
+	}
+}
+
+// TestRunRemovesLeaseOnErrorPath checks the lease is removed after the
+// finished event on the error path.
+func TestRunRemovesLeaseOnErrorPath(t *testing.T) {
+	dir := setupTask(t)
+	cfg := simConfig(filepath.Join(dir, "nope.jsonl"))
+	cfg.Lease = &LeaseConfig{RenewInterval: "20ms", TTL: "2s"}
+	if err := WriteConfig(dir, cfg); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	var buf bytes.Buffer
+	if _, err := Run(dir, RunOptions{Task: "T1", Progress: &buf}); err == nil {
+		t.Fatal("Run() with a missing fixture: got nil error, want failure")
+	}
+	leases, err := ReadLeases(dir)
+	if err != nil {
+		t.Fatalf("ReadLeases() error = %v", err)
+	}
+	if len(leases) != 0 {
+		t.Errorf("leases after the error path = %v, want none", leases)
+	}
+}
+
+// TestLeaseRemainsWhenRunKilled simulates a run that never records finished:
+// a run still in progress, with the clock frozen at dispatch time, must keep
+// its lease file, whose expires_at is in the past relative to a later now.
+func TestLeaseRemainsWhenRunKilled(t *testing.T) {
+	dir := setupTask(t)
+	if err := WriteConfig(dir, simConfig(fixturePath("clean.jsonl", t))); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	t0 := time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC)
+	oldNow := now
+	now = func() time.Time { return t0 }
+	defer func() { now = oldNow }()
+
+	type outcome struct {
+		res Result
+		err error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		res, err := Run(dir, RunOptions{Task: "T1", SimDelay: time.Second})
+		done <- outcome{res, err}
+	}()
+
+	waitFor(t, 2*time.Second, "the lease file", func() bool {
+		_, ok := leaseFor(t, dir, "T1", "r1")
+		return ok
+	})
+	l, ok := leaseFor(t, dir, "T1", "r1")
+	if !ok {
+		t.Fatal("lease missing right after it appeared")
+	}
+	want := t0.Format(time.RFC3339)
+	if l.StartedAt != want || l.ExpiresAt != t0.Add(45*time.Second).Format(time.RFC3339) {
+		t.Errorf("lease timestamps = %s/%s, want %s/%s (default ttl 45s)", l.StartedAt, l.ExpiresAt, want, t0.Add(45*time.Second).Format(time.RFC3339))
+	}
+	// The run is still sleeping in SimDelay; it never recorded finished, so
+	// the lease file must remain in place.
+	if _, ok := leaseFor(t, dir, "T1", "r1"); !ok {
+		t.Error("lease file removed while the run never recorded finished")
+	}
+	later := t0.Add(45*time.Second + time.Second)
+	if LeaseLive(l, later) {
+		t.Error("LeaseLive() = true after the ttl relative to the injected later now, want false")
+	}
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run() did not finish in time")
+	}
+}

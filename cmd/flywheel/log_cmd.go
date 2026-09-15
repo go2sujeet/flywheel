@@ -30,6 +30,7 @@ type logOptions struct {
 	brief   string
 	commit  string
 	note    string
+	goal    string
 	noState bool
 }
 
@@ -51,6 +52,7 @@ func logFlags() (*flag.FlagSet, *logOptions) {
 	fs.StringVar(&o.brief, "brief", "", "brief file")
 	fs.StringVar(&o.commit, "commit", "", "commit id")
 	fs.StringVar(&o.note, "note", "", "free-form note")
+	fs.StringVar(&o.goal, "goal", "", "goal id a planned event links to")
 	fs.BoolVar(&o.noState, "no-state", false, "skip state derivation after appending")
 	return fs, o
 }
@@ -126,6 +128,7 @@ func runLog(args []string) {
 	e.Brief = o.brief
 	e.Commit = o.commit
 	e.Note = o.note
+	e.GoalID = o.goal
 	if o.rc != "" {
 		v, err := strconv.ParseInt(o.rc, 10, strconv.IntSize)
 		if err != nil {

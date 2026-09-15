@@ -103,6 +103,26 @@ func TestRenderTextWidth(t *testing.T) {
 	}
 }
 
+func TestAgeHuman(t *testing.T) {
+	for _, tc := range []struct {
+		seconds int
+		want    string
+	}{
+		{59, "59s"},
+		{60, "1m"},
+		{3540, "59m"},
+		{3600, "1h"},
+		{169200, "47h"},
+		{172800, "2d"},
+		{147278, "40h"},
+		{0, "0s"},
+	} {
+		if got := ageHuman(tc.seconds); got != tc.want {
+			t.Errorf("ageHuman(%d) = %q, want %q", tc.seconds, got, tc.want)
+		}
+	}
+}
+
 func TestRenderOutputFormats(t *testing.T) {
 	fl := Floor{Output: Output{LandedToday: 1, Finished: 1, Rework: 0.33333, Tokens: 260, Cost: 0.001597088}}
 	var buf bytes.Buffer
