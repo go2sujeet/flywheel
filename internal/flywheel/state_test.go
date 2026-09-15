@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -421,5 +422,132 @@ func TestDeriveKeepsWorkerSessionAfterInspected(t *testing.T) {
 	}
 	if ts.Session != "w1" {
 		t.Errorf("T1 session = %q, want w1 (inspector sessions must not overwrite the worker session)", ts.Session)
+	}
+}
+
+func TestDeriveStaleLateFinished(t *testing.T) {
+	events := []Event{
+		{TS: "2026-09-14T10:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1"},
+		{TS: "2026-09-14T10:01:00Z", Task: "T1", Kind: "dispatched", Attempt: "r2"},
+		{TS: "2026-09-14T10:02:00Z", Task: "T1", Kind: "finished", Attempt: "r1"},
+	}
+	st := Derive(events)
+	ts, ok := findTask(st, "T1")
+	if !ok {
+		t.Fatal("T1 missing from derived state")
+	}
+	if ts.Status != "dispatched" {
+		t.Errorf("T1 status = %q, want dispatched (late finished r1 must not end the task)", ts.Status)
+	}
+	if ts.Attempt != "r2" {
+		t.Errorf("T1 attempt = %q, want r2 (current attempt is the latest dispatched)", ts.Attempt)
+	}
+	if want := []string{"finished r1"}; !slices.Equal(ts.Stale, want) {
+		t.Errorf("T1 stale = %q, want %q", ts.Stale, want)
+	}
+}
+
+func TestDeriveStaleValidatedIgnored(t *testing.T) {
+	events := []Event{
+		{TS: "2026-09-14T10:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1"},
+		{TS: "2026-09-14T10:01:00Z", Task: "T1", Kind: "dispatched", Attempt: "r2"},
+		{TS: "2026-09-14T10:02:00Z", Task: "T1", Kind: "validated", Attempt: "r1", Gate: "1", Tree: "abc123"},
+	}
+	st := Derive(events)
+	ts, ok := findTask(st, "T1")
+	if !ok {
+		t.Fatal("T1 missing from derived state")
+	}
+	if ts.Status != "dispatched" || ts.Attempt != "r2" {
+		t.Errorf("T1 status/attempt = %q/%q, want dispatched/r2 (stale validated changes nothing)", ts.Status, ts.Attempt)
+	}
+	if want := []string{"validated r1"}; !slices.Equal(ts.Stale, want) {
+		t.Errorf("T1 stale = %q, want %q", ts.Stale, want)
+	}
+	if ts.UpdatedAt != "2026-09-14T10:01:00Z" {
+		t.Errorf("T1 updated = %q, want the latest non-stale TS", ts.UpdatedAt)
+	}
+}
+
+func TestDeriveStaleLegacyNoAttempt(t *testing.T) {
+	events := []Event{
+		{TS: "2026-09-14T10:00:00Z", Task: "T1", Kind: "planned"},
+		{TS: "2026-09-14T10:01:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1"},
+		{TS: "2026-09-14T10:02:00Z", Task: "T1", Kind: "started"},
+		{TS: "2026-09-14T10:03:00Z", Task: "T1", Kind: "finished"},
+		{TS: "2026-09-14T10:04:00Z", Task: "T2", Kind: "planned"},
+		{TS: "2026-09-14T10:05:00Z", Task: "T2", Kind: "finished", Attempt: "r1"},
+	}
+	st := Derive(events)
+	ts, ok := findTask(st, "T1")
+	if !ok {
+		t.Fatal("T1 missing from derived state")
+	}
+	if ts.Status != "finished" {
+		t.Errorf("T1 status = %q, want finished (empty attempts apply as today)", ts.Status)
+	}
+	if ts.Attempt != "r1" || len(ts.Stale) != 0 {
+		t.Errorf("T1 attempt/stale = %q/%q, want r1/[] (no stale events)", ts.Attempt, ts.Stale)
+	}
+	ts2, ok := findTask(st, "T2")
+	if !ok {
+		t.Fatal("T2 missing from derived state")
+	}
+	if ts2.Status != "finished" || ts2.Attempt != "r1" || len(ts2.Stale) != 0 {
+		t.Errorf("T2 status/attempt/stale = %q/%q/%q, want finished/r1/[] (no dispatched means no current attempt)", ts2.Status, ts2.Attempt, ts2.Stale)
+	}
+}
+
+func TestDeriveStaleLegacyEmptyDispatch(t *testing.T) {
+	// A legacy log dispatched by hand carries no attempt: the task gets
+	// status dispatched and counts the attempt, but no current attempt is
+	// set, so a later attempt-bearing finished applies as today.
+	events := []Event{
+		{TS: "2026-09-14T10:00:00Z", Task: "T1", Kind: "planned"},
+		{TS: "2026-09-14T10:01:00Z", Task: "T1", Kind: "dispatched"},
+		{TS: "2026-09-14T10:02:00Z", Task: "T1", Kind: "finished", Attempt: "r1"},
+	}
+	events[2] = withRC(events[2], 0)
+	st := Derive(events)
+	ts, ok := findTask(st, "T1")
+	if !ok {
+		t.Fatal("T1 missing from derived state")
+	}
+	if ts.Status != "finished" {
+		t.Errorf("T1 status = %q, want finished (empty dispatched attempt must not set a current attempt)", ts.Status)
+	}
+	if ts.Attempt != "r1" {
+		t.Errorf("T1 attempt = %q, want r1 (carried from finished)", ts.Attempt)
+	}
+	if len(ts.Stale) != 0 {
+		t.Errorf("T1 stale = %q, want [] (no stale entries)", ts.Stale)
+	}
+	if ts.Attempts != 1 {
+		t.Errorf("T1 attempts = %d, want 1 (empty dispatched still counts an attempt)", ts.Attempts)
+	}
+}
+
+func TestDeriveReplayDeterminism(t *testing.T) {
+	events := []Event{
+		{TS: "2026-09-14T10:00:00Z", Task: "T1", Kind: "dispatched", Attempt: "r1"},
+		{TS: "2026-09-14T10:01:00Z", Task: "T1", Kind: "dispatched", Attempt: "r2"},
+		{TS: "2026-09-14T10:02:00Z", Task: "T1", Kind: "started", Attempt: "r1"},
+		{TS: "2026-09-14T10:03:00Z", Task: "T1", Kind: "finished", Attempt: "r1"},
+		{TS: "2026-09-14T10:00:00Z", Task: "T2", Kind: "finished", Attempt: "r1"},
+		{TS: "2026-09-14T10:00:00Z", Task: "T2", Kind: "validated", Attempt: "r2", Gate: "1", Tree: "abc123"},
+		{TS: "2026-09-14T10:00:00Z", Task: "T2", Kind: "dispatched", Attempt: "r2"},
+		{TS: "2026-09-14T10:04:00Z", Task: "T3", Kind: "planned"},
+		{TS: "2026-09-14T10:05:00Z", Task: "T3", Kind: "finished"},
+	}
+	shuffled := make([]Event, len(events))
+	for i := range events {
+		shuffled[len(events)-1-i] = events[i]
+	}
+	a := stateJSON(Derive(events))
+	if b := stateJSON(Derive(events)); a != b {
+		t.Errorf("Derive twice on the same input differs:\n%s\nvs\n%s", a, b)
+	}
+	if b := stateJSON(Derive(shuffled)); a != b {
+		t.Errorf("Derive(shuffled) differs from Derive(events):\n%s\nvs\n%s", a, b)
 	}
 }

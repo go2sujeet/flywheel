@@ -362,6 +362,78 @@ func TestValidateNewGaugeKinds(t *testing.T) {
 	}
 }
 
+func TestValidateGoalEvent(t *testing.T) {
+	ok := Event{Kind: "goal", Goal: &GoalSpec{ID: "g1", Title: "Ship", Status: "active"}}
+	if err := Validate(ok); err != nil {
+		t.Errorf("Validate() rejected a valid goal event: %v", err)
+	}
+	if err := Validate(Event{Kind: "goal"}); err == nil {
+		t.Error("Validate() accepted a goal event without a goal spec")
+	} else if !strings.Contains(err.Error(), "goal spec") {
+		t.Errorf("Validate() error = %v, want goal spec message", err)
+	}
+	for _, id := range []string{"", "g1!", "not valid"} {
+		if err := Validate(Event{Kind: "goal", Goal: &GoalSpec{ID: id, Title: "Ship", Status: "active"}}); err == nil {
+			t.Errorf("Validate() accepted goal id %q", id)
+		}
+	}
+	if err := Validate(Event{Kind: "goal", Goal: &GoalSpec{ID: "g1", Title: "", Status: "active"}}); err == nil {
+		t.Error("Validate() accepted an empty goal title")
+	} else if !strings.Contains(err.Error(), "title") {
+		t.Errorf("Validate() error = %v, want title message", err)
+	}
+	for _, s := range []string{"active", "met", "failed", "abandoned"} {
+		if err := Validate(Event{Kind: "goal", Goal: &GoalSpec{ID: "g1", Title: "Ship", Status: s}}); err != nil {
+			t.Errorf("Validate() rejected goal status %s: %v", s, err)
+		}
+	}
+	if err := Validate(Event{Kind: "goal", Goal: &GoalSpec{ID: "g1", Title: "Ship", Status: "maybe"}}); err == nil {
+		t.Error("Validate() accepted goal status maybe")
+	} else if !strings.Contains(err.Error(), "status") {
+		t.Errorf("Validate() error = %v, want status message", err)
+	}
+}
+
+func TestValidateRejectsGoalOnOtherKinds(t *testing.T) {
+	g := &GoalSpec{ID: "g1", Title: "Ship", Status: "active"}
+	for _, k := range []string{"planned", "staffed", "dispatched", "finished"} {
+		e := Event{Task: "T1", Kind: k, Goal: g}
+		if k == "staffed" {
+			e.Session = "s1"
+			e.Task = ""
+		}
+		if err := Validate(e); err == nil {
+			t.Errorf("Validate() accepted a goal on kind %s", k)
+		} else if !strings.Contains(err.Error(), "goal") {
+			t.Errorf("Validate() error = %v, want goal message", err)
+		}
+	}
+}
+
+func TestGoalRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	spec := &GoalSpec{ID: "g1", Title: "Ship status", Acceptance: []string{"go test ./..."}, Required: []string{"t1"}, Status: "active"}
+	if err := AppendEvent(dir, Event{TS: "2026-09-14T00:00:00Z", Kind: "goal", Goal: spec}); err != nil {
+		t.Fatalf("AppendEvent() goal error = %v", err)
+	}
+	if err := AppendEvent(dir, Event{TS: "2026-09-14T00:00:01Z", Task: "t1", Kind: "planned", GoalID: "g1"}); err != nil {
+		t.Fatalf("AppendEvent() planned error = %v", err)
+	}
+	evs, err := ReadEvents(dir)
+	if err != nil {
+		t.Fatalf("ReadEvents() error = %v", err)
+	}
+	if len(evs) != 2 {
+		t.Fatalf("ReadEvents() = %d events, want 2", len(evs))
+	}
+	if evs[0].Kind != "goal" || evs[0].Goal == nil || evs[0].Goal.ID != "g1" || evs[0].Goal.Title != "Ship status" {
+		t.Errorf("goal round trip mismatch: %v", evs[0])
+	}
+	if evs[1].Task != "t1" || evs[1].GoalID != "g1" {
+		t.Errorf("planned goal_id round trip mismatch: %v", evs[1])
+	}
+}
+
 func TestEventNewGaugeFieldsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	e := Event{

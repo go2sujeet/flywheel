@@ -30,6 +30,7 @@ type TaskState struct {
 	Session   string   `json:"session,omitempty"`
 	Model     string   `json:"model,omitempty"`
 	Attempt   string   `json:"attempt,omitempty"`
+	Stale     []string `json:"stale,omitempty"`
 	RC        *int     `json:"rc,omitempty"`
 	Verdict   string   `json:"verdict,omitempty"`
 	Reason    string   `json:"reason,omitempty"`
@@ -63,6 +64,18 @@ var kindRank = map[string]int{
 	"landed":       12,
 }
 
+// staleKinds are the result-bearing event kinds whose attempt must match the
+// task's current attempt (the attempt of its latest dispatched event); a
+// non-empty attempt that differs marks the event stale and it is ignored.
+var staleKinds = map[string]bool{
+	"started":      true,
+	"worker_plan":  true,
+	"report":       true,
+	"finished":     true,
+	"validated":    true,
+	"owns_checked": true,
+}
+
 // eventSortKey is the precomputed comparison key for one event, so sorting
 // does not re-marshal JSON on every comparison.
 type eventSortKey struct {
@@ -87,7 +100,9 @@ func canonical(e Event) string {
 // the events were concatenated in: events are first sorted by parsed TS (an
 // unparseable TS sorts after every parsed one), then Task, then kind rank,
 // then canonical JSON. Per task the latest status-bearing event decides the
-// status; amended only updates brief/needs/owns.
+// status; amended only updates brief/needs/owns. A result-bearing event whose
+// non-empty attempt differs from the task's latest dispatched attempt is
+// stale: it changes no field and is recorded in Stale.
 func Derive(events []Event) State {
 	keys := make([]eventSortKey, len(events))
 	for i, e := range events {
@@ -124,6 +139,8 @@ func Derive(events []Event) State {
 	}
 
 	var tasks map[string]TaskState = map[string]TaskState{}
+	cur := map[string]string{}
+	disp := map[string]bool{}
 	updated := ""
 	for _, e := range evs {
 		if e.Task == "" {
@@ -132,6 +149,11 @@ func Derive(events []Event) State {
 		ts, ok := tasks[e.Task]
 		if !ok {
 			ts = TaskState{ID: e.Task}
+		}
+		if staleKinds[e.Kind] && e.Attempt != "" && disp[e.Task] && e.Attempt != cur[e.Task] {
+			ts.Stale = append(ts.Stale, e.Kind+" "+e.Attempt)
+			tasks[e.Task] = ts
+			continue
 		}
 		switch e.Kind {
 		case "planned":
@@ -142,6 +164,10 @@ func Derive(events []Event) State {
 		case "dispatched":
 			ts.Status = "dispatched"
 			ts.Attempts++
+			if e.Attempt != "" {
+				cur[e.Task] = e.Attempt
+				disp[e.Task] = true
+			}
 		case "started":
 			ts.Status = "running"
 		case "finished":

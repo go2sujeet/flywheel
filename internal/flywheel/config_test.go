@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadConfigMissingFileReturnsDefault(t *testing.T) {
@@ -316,5 +317,86 @@ func TestConfigSetFallbacksUnsupported(t *testing.T) {
 		if !strings.Contains(err.Error(), "config.json") {
 			t.Errorf("Set(%q) error = %q, want mention of .flywheel/config.json", key, err)
 		}
+	}
+}
+
+func TestConfigLeaseDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	renew, ttl := cfg.leaseTimings()
+	if renew != 15*time.Second || ttl != 45*time.Second {
+		t.Errorf("leaseTimings() = %s/%s, want 15s/45s", renew, ttl)
+	}
+	if cfg.Lease != nil {
+		t.Errorf("DefaultConfig().Lease = %+v, want nil (an absent block must stay absent)", cfg.Lease)
+	}
+}
+
+func TestConfigLeaseTimingsFromBlock(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Lease = &LeaseConfig{RenewInterval: "30s", TTL: "90s"}
+	renew, ttl := cfg.leaseTimings()
+	if renew != 30*time.Second || ttl != 90*time.Second {
+		t.Errorf("leaseTimings() = %s/%s, want 30s/90s", renew, ttl)
+	}
+}
+
+func TestConfigLeaseValidation(t *testing.T) {
+	cases := []struct {
+		name string
+		lc   LeaseConfig
+		want string
+	}{
+		{"renew zero", LeaseConfig{RenewInterval: "0s", TTL: "45s"}, "lease.renew_interval 0s must be positive"},
+		{"renew negative", LeaseConfig{RenewInterval: "-5s", TTL: "45s"}, "lease.renew_interval -5s must be positive"},
+		{"renew unparseable", LeaseConfig{RenewInterval: "soon", TTL: "45s"}, `lease.renew_interval "soon" is not a valid duration`},
+		{"ttl zero", LeaseConfig{RenewInterval: "15s", TTL: "0s"}, "lease.ttl 0s must be positive"},
+		{"ttl unparseable", LeaseConfig{RenewInterval: "15s", TTL: "later"}, `lease.ttl "later" is not a valid duration`},
+		{"ttl equal", LeaseConfig{RenewInterval: "15s", TTL: "15s"}, "lease.ttl 15s must be greater than renew_interval 15s"},
+		{"ttl shorter", LeaseConfig{RenewInterval: "15s", TTL: "10s"}, "lease.ttl 10s must be greater than renew_interval 15s"},
+	}
+	for _, tc := range cases {
+		cfg := Config{Version: 1, Workers: []Worker{{Name: "w", Adapter: "sim", Model: "m"}}, Lease: &tc.lc}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: Validate() = %v, want error containing %q", tc.name, err, tc.want)
+		}
+	}
+	ok := Config{Version: 1, Workers: []Worker{{Name: "w", Adapter: "sim", Model: "m"}},
+		Lease: &LeaseConfig{RenewInterval: "15s", TTL: "45s"}}
+	if err := ok.Validate(); err != nil {
+		t.Errorf("valid lease block: Validate() error = %v, want nil", err)
+	}
+}
+
+func TestConfigWithoutLeaseRoundTripsUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{Version: 1, Workers: []Worker{{Name: "default", Adapter: "opencode", Model: "m"}}}
+	if err := WriteConfig(dir, cfg); err != nil {
+		t.Fatalf("WriteConfig() error = %v", err)
+	}
+	path := filepath.Join(dir, ".flywheel", "config.json")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config.json: %v", err)
+	}
+	got, exists, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if !exists {
+		t.Fatal("LoadConfig() exists = false, want true")
+	}
+	if err := WriteConfig(dir, got); err != nil {
+		t.Fatalf("WriteConfig() after load error = %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config.json after rewrite: %v", err)
+	}
+	if !reflect.DeepEqual(after, before) {
+		t.Errorf("old config without a lease block changed when written back:\nbefore: %s\nafter:  %s", before, after)
+	}
+	if got.Lease != nil {
+		t.Errorf("loaded config Lease = %+v, want nil", got.Lease)
 	}
 }
