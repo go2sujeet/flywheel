@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"flywheel/internal/flywheel"
 )
@@ -51,12 +52,20 @@ func runInit(args []string) {
 	if _, err := os.Stat(filepath.Join(o.dir, ".flywheel", "config.json")); err == nil {
 		configExisted = true
 	}
-	path, err := flywheel.InitSeeded(o.dir, o.force, o.model, o.variant)
+	path, created, err := flywheel.InitSeeded(o.dir, o.force, o.model, o.variant)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "flywheel init: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println(path)
+	if len(created) == 0 && !o.force {
+		fmt.Printf("init: nothing to do (%s present)\n", strings.Join(presentScaffoldFiles(o.dir), ", "))
+	} else {
+		fmt.Println(path)
+		for _, p := range created {
+			fmt.Printf("created: %s\n", p)
+		}
+		fmt.Println("next: flywheel log --task <id> --kind planned --brief <path>")
+	}
 	if configExisted && (o.model != "" || o.variant != "") {
 		fmt.Println("config.json exists; change it with: flywheel config set model|variant <value>")
 	}
@@ -70,4 +79,16 @@ func runInit(args []string) {
 			fmt.Fprintln(os.Stderr, "!"+p)
 		}
 	}
+}
+
+// presentScaffoldFiles lists which of the scaffold files init creates already
+// exist in dir, as relative paths, for the quiet nothing-to-do message.
+func presentScaffoldFiles(dir string) []string {
+	var present []string
+	for _, name := range []string{"flywheel.md", ".flywheel/state.json", ".flywheel/events.jsonl", ".flywheel/config.json", ".flywheel/.gitignore"} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(name))); err == nil {
+			present = append(present, name)
+		}
+	}
+	return present
 }

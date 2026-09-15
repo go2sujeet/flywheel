@@ -15,18 +15,57 @@ import (
 func TestInitCreatesScaffold(t *testing.T) {
 	dir := t.TempDir()
 
-	got, err := Init(dir, false)
+	got, created, err := InitSeeded(dir, false, "", "")
 	if err != nil {
-		t.Fatalf("Init() error = %v", err)
+		t.Fatalf("InitSeeded() error = %v", err)
 	}
 	if got != dir {
-		t.Fatalf("Init() = %q, want %q", got, dir)
+		t.Fatalf("InitSeeded() = %q, want %q", got, dir)
+	}
+	wantCreated := []string{"flywheel.md", ".flywheel/state.json", ".flywheel/events.jsonl", ".flywheel/config.json", ".flywheel/.gitignore"}
+	if !reflect.DeepEqual(created, wantCreated) {
+		t.Errorf("InitSeeded() created = %v, want %v", created, wantCreated)
 	}
 
 	for _, f := range []string{"flywheel.md", ".flywheel/state.json", ".flywheel/events.jsonl", ".flywheel/.gitignore", ".flywheel/.gitattributes", ".flywheel/briefs"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
-			t.Errorf("Init() did not create %s: %v", f, err)
+			t.Errorf("InitSeeded() did not create %s: %v", f, err)
 		}
+	}
+}
+
+func TestInitSeededOmitsPreexistingFilesFromCreated(t *testing.T) {
+	dir := t.TempDir()
+	dot := filepath.Join(dir, ".flywheel")
+	if err := os.MkdirAll(dot, 0o755); err != nil {
+		t.Fatalf("mkdir .flywheel: %v", err)
+	}
+	for _, f := range []string{"config.json", "events.jsonl", ".gitignore"} {
+		if err := os.WriteFile(filepath.Join(dot, filepath.FromSlash(f)), []byte{}, 0o644); err != nil {
+			t.Fatalf("write %s: %v", f, err)
+		}
+	}
+
+	_, created, err := InitSeeded(dir, false, "", "")
+	if err != nil {
+		t.Fatalf("InitSeeded() error = %v", err)
+	}
+	want := []string{"flywheel.md", ".flywheel/state.json"}
+	if !reflect.DeepEqual(created, want) {
+		t.Errorf("InitSeeded() created = %v, want %v", created, want)
+	}
+}
+
+func TestInitSeededOnInitializedDirCreatesNothing(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, err := InitSeeded(dir, false, "", ""); err != nil {
+		t.Fatalf("InitSeeded() error = %v", err)
+	}
+
+	if _, created, err := InitSeeded(dir, false, "", ""); err != nil {
+		t.Fatalf("InitSeeded() second call error = %v, want idempotent success", err)
+	} else if len(created) != 0 {
+		t.Errorf("InitSeeded() second call created = %v, want none", created)
 	}
 }
 
@@ -96,21 +135,23 @@ func TestInitStateJSONContract(t *testing.T) {
 	}
 }
 
-func TestInitRefusesOverwriteWithoutForce(t *testing.T) {
+func TestInitRepeatedCallCreatesNothing(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Init(dir, false); err != nil {
 		t.Fatalf("Init() error = %v", err)
 	}
 
-	if _, err := Init(dir, false); err == nil {
-		t.Fatal("Init() second call without --force: got nil error, want refusal")
-	} else if !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("Init() second call error = %v, want 'already exists'", err)
+	// An already-initialized directory has nothing to do: success, no
+	// created files, nothing refused.
+	if _, created, err := InitSeeded(dir, false, "", ""); err != nil {
+		t.Fatalf("InitSeeded() second call error = %v, want idempotent success", err)
+	} else if len(created) != 0 {
+		t.Errorf("InitSeeded() second call created = %v, want none", created)
 	}
 
 	// Nothing changed: flywheel.md still present, state.json still valid.
 	if _, err := os.Stat(filepath.Join(dir, "flywheel.md")); err != nil {
-		t.Errorf("flywheel.md missing after refused overwrite: %v", err)
+		t.Errorf("flywheel.md missing after repeated init: %v", err)
 	}
 }
 
@@ -593,7 +634,7 @@ func TestInitRollbackRemovesCreatedGitattributes(t *testing.T) {
 
 func TestInitSeedsModelAndVariant(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := InitSeeded(dir, false, "x/y", "max"); err != nil {
+	if _, _, err := InitSeeded(dir, false, "x/y", "max"); err != nil {
 		t.Fatalf("InitSeeded() error = %v", err)
 	}
 	cfg, exists, err := LoadConfig(dir)
@@ -617,7 +658,7 @@ func TestInitSeedsModelAndVariant(t *testing.T) {
 
 func TestInitSeedsVariantOnly(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := InitSeeded(dir, false, "", "max"); err != nil {
+	if _, _, err := InitSeeded(dir, false, "", "max"); err != nil {
 		t.Fatalf("InitSeeded() error = %v", err)
 	}
 	cfg, _, err := LoadConfig(dir)
@@ -647,7 +688,7 @@ func TestInitSeededKeepsExistingConfig(t *testing.T) {
 		t.Fatalf("write config.json: %v", err)
 	}
 
-	if _, err := InitSeeded(dir, true, "x/y", "max"); err != nil {
+	if _, _, err := InitSeeded(dir, true, "x/y", "max"); err != nil {
 		t.Fatalf("InitSeeded() --force error = %v", err)
 	}
 	b, err := os.ReadFile(configPath)
