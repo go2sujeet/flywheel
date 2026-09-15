@@ -128,7 +128,7 @@ escalations. It is the only non-OpenCode adapter in phase 1, and it never calls 
 
 ### 5.1 Skills, for any lead
 - Skills are plain `SKILL.md` folders, installable with
-  `npx skills add go2sujeet/flywheel --skill <name>` into agents that read skills (`.agents/`,
+  `npx skills add suzworx/flywheel --skill <name>` into agents that read skills (`.agents/`,
   `.claude/`, `.cursor/`, `.opencode/`, and so on), or copied by hand when offline.
 - For agents that read `AGENTS.md` instead (Codex and others), `flywheel init --agents-md` adds a
   short block that points at the installed skills and the persona each agent plays.
@@ -155,7 +155,7 @@ escalations. It is the only non-OpenCode adapter in phase 1, and it never calls 
     { "name": "local", "adapter": "opencode", "model": "ollama/qwen3:8b", "max_parallel": 1 }
   ],
   "limits": { "per_host": 32, "budget": { "wave_cost_usd": 25 } },
-  "feedback": { "upstream": "go2sujeet/flywheel", "submit": "ask" }
+  "feedback": { "upstream": "suzworx/flywheel", "submit": "ask" }
 }
 ```
 
