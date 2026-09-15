@@ -36,12 +36,14 @@ planned subcommands land — don't invoke commands that aren't built.
 | `flywheel state` | **implemented** | Derive and print state from the event log. |
 | `flywheel run <task>` | **implemented** | Canonical dispatch: attach the brief with `--file`, apply the deny policy, record every event. |
 | `flywheel validate <task> [--workdir]` | **implemented** | Run the brief header's `gate:` lines on the exact tree and check `owns`; exit 0, or 5 on a failing gate or a file outside owns. |
+| `flywheel lint <brief> [--dir DIR]` | **implemented** | Check a brief for problems: missing `owns:`, `gate:`, `# TASK` or `## Checks`, owns paths that don't exist; warnings for a missing write rule or `needs:` line (exit 0/1). |
 | `flywheel inspect <task> --verdict pass\|rework\|scrap\|escalate --session <own session>` | **implemented** | Record an inspection; refused with exit 6 for a bad verdict, a worker's session, or no passing readings for the tree as it is now. |
 | `flywheel verify [<task>...\|--all] [--json]` | **implemented** | Check the event log against rules T1, T3, T4, T5, T8; exit 0 or 6. |
 | `flywheel staff --role lead --session <session> [--model M]` | **implemented** | Register a factory role on the floor; the lead line then reads `lead <session> (<model>)`. |
 | `flywheel land <task> --commit <sha> [--note TEXT]` | **implemented** | Record a landing; refused with exit 6 unless the task passed inspection, and a different commit than a previous landing is refused. |
 | `flywheel factory [--once\|--json]` | **implemented** | Render the floor — workers, units with run states, andon, output; bare `flywheel` opens it, one shot when stdout is not a terminal. |
 | `flywheel status [--dir DIR] [--now RFC3339] [--json]` | **implemented** | Summarize the factory deterministically: task counts per status, live and stale attempts, last event and last meaningful progress, andon count. |
+| `flywheel cost [--dir DIR] [--json]` | **implemented** | Sum finished events' tokens and cost per task and per model; a finished task without a dispatch is listed under `unknown`. |
 | `flywheel next [--dir DIR] [--now RFC3339] [--json]` | **implemented** | Print the reconciler's next actions read-only: lost attempts, inspection requests, blocks, waits and dispatches; nothing executes them yet. |
 | `flywheel goal add "<title>" --id <id> [--accept CMD]... [--require TASK]...` | **implemented** | Record a factory goal; later add, list, show and set its status with `flywheel goal <add\|list\|show\|set>`. |
 | `flywheel plan`, `retry`, `handoff` | **planned** | Control plane: create tasks, resume, transfer between agents. |
