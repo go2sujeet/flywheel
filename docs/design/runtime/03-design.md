@@ -68,7 +68,7 @@ Factory runtime (internal/flywheel/)
 | type | Lease | leases.go (new) | pid, host, started_at, renewed_at, expires_at, run file |
 | type | Observed | reconcile.go (new) | leases + run-file ages + controller lock |
 | type | Policy | reconcile.go (new) | retry budget, backoff, timeouts, taken from config |
-| type | Action | reconcile.go (new) | MarkLost, ScheduleRetry, MakeReady, Dispatch, Block, Fail, MarkGoalMet, SetHealth, each with a reason string |
+| type | Action | reconcile.go (new) | MarkLost, ScheduleRetry, MakeReady, Dispatch, Block, Fail, MarkGoalMet, SetHealth, RequestInspection, each with a reason string |
 | type | Health | status.go (new) | HEALTHY, DEGRADED, WAITING, STALLED, BLOCKED, FAILED, COMPLETED, with the rule and evidence |
 | file | .flywheel/leases/<task>.<attempt>.json | lease manager | written atomically each renew interval; removed after appending finished |
 | file | .flywheel/controller.lock | controller | pid, generation, expires_at; renewed each tick; an expired lock is taken over with generation+1 |
@@ -78,6 +78,7 @@ Factory runtime (internal/flywheel/)
 | func | Derive | state.go | change: ignore finished/report/validated/owns_checked whose attempt is not the latest dispatched; count them as stale |
 | event | lost | .flywheel/events.jsonl | an attempt whose lease expired (attempt, reason lease-expired, evidence: lease expires_at and the tick time) |
 | event | intent_expired | .flywheel/events.jsonl | a dispatch intent with no dispatched echo within the intent timeout |
+| event | failed | .flywheel/events.jsonl | terminal task failure: retry budget exhausted, a terminal finish reason, or a failed needs target, with the reason |
 | config | lease | .flywheel/config.json | renew_interval, ttl |
 | config | controller | .flywheel/config.json | interval, intent_timeout |
 | field | last_event_at | State | activity: the latest event's ts, any kind |
@@ -104,9 +105,9 @@ exits 6. Derive itself stays a pure replay; a pre-existing illegal sequence is s
 | Task | dispatched | lost | lost event | lease expired before started |
 | Task | running | finished | finished event | run file complete, rc recorded |
 | Task | running | lost | lost event | lease expired before finished |
-| Task | finished | passed | reviewed pass | inspected after the latest finished on the validated tree |
-| Task | finished | needs-correction | reviewed correct | gate or owns failure after the latest finished |
-| Task | finished | rejected | reviewed reject | lead reject with reason |
+| Task | finished | passed | inspected pass | inspected after the latest finished on the validated tree |
+| Task | finished | needs-correction | inspected rework or a failed gauge | gate or owns failure after the latest finished |
+| Task | finished | rejected | inspected scrap | lead reject with reason |
 | Task | finished | retry-wait | retry_scheduled event | reason retryable and attempts < max_attempts |
 | Task | finished | failed | failed event | reason terminal or attempts >= max_attempts |
 | Task | lost | retry-wait | retry_scheduled event | attempts < max_attempts |
@@ -162,8 +163,11 @@ One tick, in this order, each step reading only State + Observed and emitting Ac
     renewal, never process existence (spec §11).
 3.  Classify finished attempts: map the finished reasons (stop, error, silent, capped, provider-error,
     start-failed) onto retry classes — retry, wait, rework, terminal (spec §16).
-4.  Process validation outcomes: gates and owns results on the latest finished decide passed /
-    needs-correction; a validated pass is meaningful progress.
+4.  Process validation outcomes: a validated pass on the latest finished makes the task await
+    inspection; Reconcile emits RequestInspection, which dispatches the inspector persona when the
+    policy `auto_inspect` is on and otherwise waits for the lead; a failed gauge makes the task
+    needs-correction. Reconcile never writes an inspected event; acceptance is only an inspected
+    pass (T3, T4).
 5.  Resolve needs: a task is ready only when every needs target is passed or landed; a task whose
     target failed terminally is blocked, then failed.
 6.  Evaluate retry eligibility: retryable finishes below max_attempts emit retry_scheduled with
@@ -210,12 +214,12 @@ controller keeps no RAM state.
 | controller crash | on restart the log is replayed and leases observed | continue reconciling; expired intents and leases reconciled away; no RAM dependency | intent_expired, lost |
 | two controllers | controller.lock generation checked every tick | the stale generation refuses to act; takeover only after lock expiry (generation+1); two live locks are an invariant violation | none (refused, exit 6) |
 | provider outage (every attempt provider-error or start-failed) | every finished reason is provider-error or start-failed | classify as wait, backoff retry; health WAITING; resumes when capacity returns | retry_scheduled, health |
-| capped output | finished reason capped (run.go:ExitCode) | treated as a validation-classified outcome; rework via the retry policy | reviewed needs-correction, retry_scheduled |
-| validation failure | gate rc != 0 on the validated tree | task needs-correction; rework consumes retry budget | reviewed, retry_scheduled |
+| capped output | finished reason capped (run.go:ExitCode) | treated as a validation-classified outcome; rework via the retry policy | inspected rework or a failed gauge, retry_scheduled |
+| validation failure | gate rc != 0 on the validated tree | task needs-correction; rework consumes retry budget | inspected, retry_scheduled |
 | retry budget exhausted | attempts >= max_attempts on a retryable finish | terminal: task failed; dependent goals may fail; health FAILED; manual intervention | failed |
 | duplicate dispatch | two unexpired intents for one task / second live attempt | scheduler keeps one live attempt per task; a second intent for the same task is refused (at-most-once per intent id) | none (refused, exit 6) |
 | late result from an older attempt | result-bearing event's attempt != latest dispatched | Derive moves the result to the task's stale list; state unchanged; verify flags it | stale (field), verify flag |
 | needs target failed | a needs target reaches rejected or failed | dependent task blocked with the target named; if the target is terminal the task fails | blocked, failed |
-| validated tree changed before accept | tree hash at validated differs from the tree at inspected/landed | inspect refuses (evidence mismatch, T3); task needs-correction | reviewed correct, refusal |
+| validated tree changed before accept | tree hash at validated differs from the tree at inspected/landed | inspect refuses (evidence mismatch, T3); task needs-correction | inspected rework or a failed gauge, refusal |
 | torn event-log write | ParseEvents names the bad line; AppendEvent repairs the torn byte | the torn line is not replayed; the next append repairs; verify flags an invariant violation if the torn line was a transition | none (repair) |
 | machine restart | replay after boot; leases observed cold | Derive rebuilds; expired leases -> lost, expired intents -> intent_expired, retries rescheduled from eligible_at | lost, intent_expired, retry_scheduled |
